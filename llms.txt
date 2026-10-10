@@ -1,0 +1,28 @@
+# contract-legal-review
+
+> Public Chinese contract legal review skill. Read SKILL.md first, download the complete repository, then run its local Python scripts. Python 3.10+; pypdf is optional for PDFs. This is a fixed three-law snapshot.
+
+## Entry points
+- [Skill instructions](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/SKILL.md)
+- [Human installation guide](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/README.md)
+- [Full repository ZIP](https://github.com/827827sy-design/contract-legal-review/archive/refs/heads/main.zip)
+
+## References
+- [Risk JSON schema](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/risk_schema.md)
+- [Review checklist](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/review_checklist.md)
+- [Law index guide](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/law_topics.md)
+
+## Scripts
+- [Contract extraction](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/extract_contract.py)
+- [Law search](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/search_law.py)
+- [Review validation](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/validate_review.py)
+- [Report rendering](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/render_report.py)
+- [Shared helpers](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/common.py)
+
+## Resources
+- [Civil Code index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/minfadian.json)
+- [Labor Contract Law index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/laodonghetongfa.json)
+- [Company Law index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/gongsifa.json)
+- [Report template](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/assets/report_template.html)
+- [Optional PDF dependency](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/requirements.txt)
+- [License](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/LICENSE)
