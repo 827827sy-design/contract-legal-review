@@ -35,6 +35,10 @@ force_utf8_stdio()
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
+def editable_paragraph(element):
+    unsupported = {'drawing','object','fldChar','instrText','del','ins','tab','br','cr','sdt'}
+    return not any(node.tag.split('}')[-1] in unsupported for node in element.iter())
+
 
 # ---------------------------------------------------------------- DOCX
 
@@ -73,26 +77,36 @@ def extract_docx(path: Path):
         raise ValueError("DOCX 无 body")
 
     def walk(container):
-        for el in container:
+        for body_index, el in enumerate(container):
             if el.tag == f"{W}p":
                 txt = _docx_paragraph_text(el)
                 style = _para_style(el)
                 kind = "heading" if (style.lower().startswith("heading")
                                      or style.startswith("标题")
                                      or style in ("Title", "Subtitle")) else "para"
-                blocks.append({"kind": kind, "text": txt, "style": style})
+                blocks.append({"kind": kind, "text": txt, "style": style,
+                               "editable": editable_paragraph(el),
+                               "locator": {"body_index":body_index,"kind":"paragraph"}})
             elif el.tag == f"{W}tbl":
-                rows_txt = []
-                for tr in el.findall(f"{W}tr"):
-                    cells = []
-                    for tc in tr.findall(f"{W}tc"):
+                rows_txt, structured = [], []
+                for row_index, tr in enumerate(el.findall(f"{W}tr")):
+                    cells, structured_row = [], []
+                    for col_index, tc in enumerate(tr.findall(f"{W}tc")):
                         cell = " ".join(
                             _docx_paragraph_text(p)
                             for p in tc.findall(f"{W}p")
                         ).strip()
                         cells.append(cell)
+                        paragraphs = tc.findall(f"{W}p")
+                        safe = (len(paragraphs)==1 and editable_paragraph(paragraphs[0]) and
+                                _docx_paragraph_text(paragraphs[0])==cell and
+                                not tc.findall(f'.//{W}gridSpan') and not tc.findall(f'.//{W}vMerge') and
+                                not tc.findall(f'.//{W}tbl'))
+                        structured_row.append({'text':cell,'editable':safe,
+                                               'locator':{'body_index':body_index,'row':row_index,'col':col_index,'kind':'cell'}})
                     rows_txt.append(" | ".join(cells))
-                blocks.append({"kind": "table", "text": "\n".join(rows_txt)})
+                    structured.append(structured_row)
+                blocks.append({"kind": "table", "text": "\n".join(rows_txt), "cells":structured})
 
     walk(body)
     return blocks, notes
@@ -239,6 +253,7 @@ def main():
             "text": txt,
             **({"style": b["style"]} if b.get("style") else {}),
             **({"page": b["page"]} if b.get("page") else {}),
+            **{k:b[k] for k in ('cells','locator','editable') if k in b},
         })
     blocks = cleaned
 
@@ -264,6 +279,9 @@ def main():
         "full_text": full_text,
         "block_offsets": offsets,
     }
+    from revision_core import nodes_for
+    contract['schema_version'] = 2
+    contract['nodes'] = nodes_for(contract)
     write_json(task_dir / "contract.json", contract)
 
     # 同时输出纯文本，方便模型阅读（不进入 HTML 渲染管线）

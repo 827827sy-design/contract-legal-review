@@ -240,5 +240,5 @@ def esc(s) -> str:
 def json_for_script(obj) -> str:
     """安全嵌入 <script> 的 JSON：转义 </ 与 U+2028/2029。"""
     s = json.dumps(obj, ensure_ascii=False)
-    return (s.replace("</", "<\\/").replace("\u2028", "\\u2028")
+    return (s.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026").replace("\u2028", "\\u2028")
              .replace("\u2029", "\\u2029"))

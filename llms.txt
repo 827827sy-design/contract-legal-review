@@ -1,6 +1,6 @@
 # contract-legal-review
 
-> Public Chinese contract legal review skill. Read SKILL.md first, download the complete repository, then run its local Python scripts. Python 3.10+; pypdf is optional for PDFs. This is a fixed three-law snapshot.
+> Public WorkBuddy contract legal review V2 skill. Read SKILL.md first, download the complete repository, then run its local Python scripts. Python 3.10+; pypdf is optional for PDFs. Fixed offline editor, preferences, perspectives, revisions and re-review handoff. This is a fixed three-law snapshot.
 
 ## Entry points
 - [Skill instructions](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/SKILL.md)
@@ -11,6 +11,9 @@
 - [Risk JSON schema](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/risk_schema.md)
 - [Review checklist](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/review_checklist.md)
 - [Law index guide](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/law_topics.md)
+- [V2 WorkBuddy workflow](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/v2_workflow.md)
+- [Revision protocol](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/revisions_schema.md)
+- [Delivery report](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/V2_DELIVERY_REPORT.md)
 
 ## Scripts
 - [Contract extraction](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/extract_contract.py)
@@ -18,11 +21,18 @@
 - [Review validation](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/validate_review.py)
 - [Report rendering](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/render_report.py)
 - [Shared helpers](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/common.py)
+- [Preferences](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/preferences.py)
+- [Review context](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/prepare_review.py)
+- [Revision validation and re-review](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/revisions.py)
+- [Shared revision replay](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/revision_core.py)
+- [WorkBuddy Word application helper](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/apply_docx.py)
+- [Explicit amount arithmetic](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/check_amounts.py)
 
 ## Resources
 - [Civil Code index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/minfadian.json)
 - [Labor Contract Law index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/laodonghetongfa.json)
 - [Company Law index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/gongsifa.json)
 - [Report template](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/assets/report_template.html)
+- [Fixed editor JavaScript](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/assets/editor.js)
 - [Optional PDF dependency](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/requirements.txt)
 - [License](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/LICENSE)

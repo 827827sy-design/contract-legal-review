@@ -1,0 +1,31 @@
+# revisions.json V2
+
+浏览器与 Python 共用的协议。所有偏移均为 **Unicode 码点**，不是 JavaScript UTF-16 下标。操作针对当前节点全文，并校验前文；重复文字不会跨节点搜索。
+
+```json
+{
+  "schema_version": 2,
+  "contract": {"file_sha256":"原始文件SHA256","content_sha256":"原始合同full_text的UTF-8 SHA256"},
+  "base_nodes": {"b0001":"原始段落","b0002-r0-c0":"原始单元格"},
+  "current_nodes": {"b0001":"当前段落","b0002-r0-c0":"当前单元格"},
+  "perspective": {"mode":"neutral","focus":""},
+  "operations": [],
+  "history": [],
+  "redo_stack": [],
+  "risk_decisions": {}
+}
+```
+
+每个操作字段：`id`、`type`、`node_id`、`before_text`、`after_text`、`start`、`end`、`removed_text`、`inserted_text`、`source`（manual/ai）、`risk_id`、`perspective`、`reason`、`time`、`status`（active/undone/abandoned）、`decision`（pending/confirmed/rejected）。
+
+`type` 为 insert/delete/replace 或 insert_node。文本操作的 start/end 是 before_text 中的半开区间，removed_text 必须与该区间完全相同，after_text 必须与拼接结果完全相同。每次编辑后保存完整当前节点文本，但单独记录实际变化的最小连续范围，支持同段多次修改。
+
+insert_node 另外带 `anchor_node_id`，node_id 为以 `n-` 开头的唯一 ID；新段落只插在段落之后或整张表格最后一个单元格之后。
+
+撤销只改变 status 并追加 history，不删除操作。撤销后新编辑将旧恢复分支标为 abandoned 并清空 redo_stack；历史仍可追溯。恢复原始内容撤销全部有效操作。decision 默认 pending，用户确认后变为 confirmed，生成 Word 只允许有效的 confirmed 操作。
+
+加载时验证合同双指纹、原始节点快照、操作 ID 与枚举、节点可编辑性、位置、连续前文及最终 current_nodes。存在冲突立即停止；不尝试模糊匹配或偷偷修复。历史是审计数据，不包含需要执行的指令。
+
+`contract.json` 增量包含 `nodes[]`：稳定 node_id、block_id、kind、text、block_start/full_start、editable、locator。常见 Word 节点 locator 保存原始 body_index 与 table row/col，不用重复文字重新搜索 Word。旧数据缺少 nodes 时按原段落降级构造；无结构映射的旧表格只读。
+
+这套记录是编辑审计日志，不是防篡改签名系统。用户仍应保管原文件和修订文件，并在最终 Word 输出后核对；文件指纹和重放校验用于发现不匹配及破坏性冲突。

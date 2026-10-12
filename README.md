@@ -1,77 +1,39 @@
-# contract-legal-review · 合同法律风险审查 Skill
+# 合同风险审查 Skill V2 / WorkBuddy
 
-供 AI agent 使用的中国境内合同审查技能。保留合同原文，通过本地 Python 脚本检索法律条文、校验引用与原文位置，生成可离线打开的单文件交互式 HTML 报告。
+在 V1 的本地合同解析、三部法律索引、证据定位与机械核验上增量增加长期偏好、审查视角和固定离线编辑器。保留默认中立审查，合同正文不上传第三方。
 
-## 直接交给其他 agent
+将整个文件夹放在 WorkBuddy 的 skills 目录，保留 `SKILL.md`、scripts、references、assets、law_index。使用当前 WorkBuddy 可用的 Python 3.10+；只有 PDF 解析额外需要 requirements.txt 中的 pypdf。HTML 的 CSS、JS 与数据全部内嵌，无需 Node 或联网。
 
-复制下面这段指令即可：
+入口为 [SKILL.md](SKILL.md)，完整流程为 [V2 WorkBuddy 指南](references/v2_workflow.md)，协议为 [修订格式](references/revisions_schema.md)。用户可请求：
 
-```text
-请读取 https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/SKILL.md ，
-按照这个 skill 审查我提供的合同。先下载完整仓库，并按需阅读 references/ 中的说明；
-使用仓库中的 scripts/、law_index/ 和 assets/，将合同文件及审查产物保存在本地。
-```
+> 用 contract-legal-review 审查这份合同。首次确认长期偏好；默认中立。输出可离线编辑的审查报告，修改记录独立保存，原文件保留。
 
-- [技能入口（网页）](https://github.com/827827sy-design/contract-legal-review/blob/main/SKILL.md)
-- [技能入口（纯文本，适合 agent 读取）](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/SKILL.md)
-- [完整仓库 ZIP](https://github.com/827827sy-design/contract-legal-review/archive/refs/heads/main.zip)
+打开 HTML 后可编辑常见段落/单元格、应用建议、插入条款、撤销恢复、查看修订或清洁稿。必须主动保存并妥善保管 revisions.json；下载发起不等于保存成功。再次打开用导入恢复，或临时恢复后重新保存。
+
+视角切换与修改后复审需要返回 WorkBuddy 真实重新分析；HTML 提供请求指令。最终 DOCX 由 WorkBuddy 读取原始合同与已确认修订生成新文件；浏览器没有 Word 导出或打印功能。
+
+## 公开访问与其他 agent
+
+- [SKILL.md 纯文本入口](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/SKILL.md)
+- [完整仓库下载](https://github.com/827827sy-design/contract-legal-review/archive/refs/heads/main.zip)
+- [WorkBuddy 完整流程](https://github.com/827827sy-design/contract-legal-review/blob/main/references/v2_workflow.md)
 - [Agent 文件索引](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/llms.txt)
 
-网页和纯文本入口都公开可读，无需 GitHub 登录。实际执行审查需要 agent 能读取本地文件、运行 Python，并自行形成结构化审查草稿；脚本负责解析、检索、机械校验与报告渲染。仅打开网站不会自动运行审查。
+这些文件公开可读，无需登录。其他 agent 可读取 SKILL.md 并下载完整目录；运行仍需本地文件和 Python 能力。将上述技能入口交给 agent，并要求保留原始合同、单独保存修订记录。V2 的完成编辑和 AI 复审交接以 WorkBuddy 为目标宿主。
 
-## 下载与运行
+## 验证
 
-```bash
-git clone https://github.com/827827sy-design/contract-legal-review.git
-cd contract-legal-review
-python --version
+开发测试使用 Python 标准库；浏览器测试额外需要本机 Playwright 与 Edge/Chromium，均不是 skill 的运行依赖。每轮测试使用独立虚构合同和偏好目录。
+
+Windows PowerShell 示例：
+
+```powershell
+$env:CONTRACT_REVIEW_TEST_DIR = Join-Path $env:TEMP 'contract-review-v2-tests'
+python -B -X utf8 tests/test_v2.py
+# 在已安装 Playwright 的开发环境执行，不需要 @playwright/test
+node tests/browser_v2.cjs
 ```
 
-要求 Python 3.10+。Windows 可用 `python`，macOS/Linux 可按实际环境改为 `python3`。DOCX、TXT、MD 的解析和后续检索、校验、渲染只需要标准库。解析含文本层的 PDF 时额外安装：
+浏览器测试默认使用 msedge；可通过 REVIEW_BROWSER_CHANNEL 指定本机已有的 Chrome/Chromium 通道。测试结果和截图在输出的 FIXTURES 目录，路径同时记录于测试目录的 latest-fixtures.txt。
 
-```bash
-python -m pip install -r requirements.txt
-```
-
-也可把完整仓库文件夹复制到你所用 agent 的技能目录，由该 agent 读取根目录的 `SKILL.md`。
-
-```bash
-# 在 skill 根目录运行；替换示例输入与任务目录
-python scripts/extract_contract.py --input "/path/to/contract.docx" --task-dir "/path/to/review-task"
-python scripts/search_law.py --index-dir law_index --list-topics
-```
-
-随后让 agent 按 [审查流程](SKILL.md) 和 [风险数据格式](references/risk_schema.md) 生成任务目录内的 `review_draft.json`。草稿完成后：
-
-```bash
-python scripts/validate_review.py --task-dir "/path/to/review-task" --index-dir law_index
-python scripts/render_report.py --task-dir "/path/to/review-task"
-```
-
-用浏览器打开任务目录内的 `contract_review.html`。校验结果同时保存在 `verified_review.json`、`review_result.json`，各阶段日志保存在 `review_log.json`。
-
-旧式二进制 DOC 需先转换为 DOCX；扫描 PDF 需先 OCR。解析失败时停止审查，部分解析时明确说明覆盖范围。
-
-## 文件结构
-
-```text
-SKILL.md                    agent 的技能说明与工作流程
-scripts/                    合同解析、法律检索、引用校验、报告渲染
-references/                 风险 JSON 格式、核查清单、法律索引说明
-law_index/                  三部法律的条文及主题索引
-assets/report_template.html 单文件报告模板
-requirements.txt            PDF 解析的可选依赖
-llms.txt                    公开文件入口索引
-```
-
-## 审查范围与数据
-
-随技能分发的法律索引记录《民法典》《劳动合同法（2012修正）》《公司法（2023修订）》三个版本，条数分别为 1260、98、266；具体来源、版本、采集时间与语料校验和见各 JSON 元数据和 [知识库说明](references/law_topics.md)。它们是随仓库分发的固定快照，不会自动更新。
-
-技能在这三部法律的范围内识别法律合规风险、效力疑点、条款缺失和约定不明；其他法律法规、司法解释与外部事实作为待核实事项。引用与位置的机械校验只能证明其与本地语料及合同原文匹配，不能代替法律适用判断或人工核实。
-
-合同及审查产物保存在本地，不上传第三方服务。请勿把真实合同、审查报告或任务目录提交到这个公开仓库；`.gitignore` 已排除常见产物目录与文件。
-
-## License
-
-技能说明、脚本和报告模板按 [MIT License](LICENSE) 发布。法律条文按各自来源及适用规则使用，MIT 许可不声称授予法律文本本身的权利。
+本版本交付细节、实际测试及限制见 [V2_DELIVERY_REPORT.md](V2_DELIVERY_REPORT.md)。MIT 许可覆盖说明、代码与模板；法律文本的来源及适用规则独立于代码许可。

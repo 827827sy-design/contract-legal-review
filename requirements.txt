@@ -1,2 +1,2 @@
-# Optional: only needed for PDF text extraction.
+# Optional runtime dependency, only for extracting text-based PDF.
 pypdf>=4.0

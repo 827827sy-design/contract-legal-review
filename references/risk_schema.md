@@ -28,9 +28,19 @@
 | evidence | array | 是 | 原文证据，见下。至少 1 条；缺失条款用 no_text 形式 |
 | legal_basis | array | 否 | 法律依据，见下。可为空数组（纯完整性建议时） |
 | recommendation | string | 是 | 中立、可操作的修改/补充建议 |
-| proposed_clause | string | 否 | 建议条款示例文本（不是最终法律文本，报告中会标注"示例"） |
+| proposed_clause | string | 否 | 建议条款示例文本（不是最终法律文本，报告中会标注"示例"）。未知金额、日期、条件等用明确占位符（如【金额】【日期】），**不得编造**。适合修改/补充的事项应尽量提供；仅能列为待核实的应留空（报告中保留浅绿区域并显示待补充说明） |
 | manual_checks | array[string] | 否 | 需人工核实的事项（主体资格、审批手续、时间效力、超范围法律问题等） |
 | scope_note | string | 否 | 范围说明，如"涉及个人信息保护，超出三部法律范围，仅作待核实提示" |
+| risk_source | enum | 否 | V2：legal / company_policy / negotiation / experience；旧数据默认 legal。偏好不等于法律 |
+| preference_id | string | 否 | 对应用户确认的长期偏好编号 |
+| objective_legal_conclusion | string | 否 | 客观法律判断，切换立场时保持同一事实下的一致性 |
+| edit | object | 否 | node_id、kind（partial/replace/insert_clause）、start/end、expected_text；位置按 Unicode 码点，来自当前 contract.json 的 nodes。校验失败不得自动应用 |
+
+顶层 V2 可带 `perspective`（mode=neutral/party_a/party_b/custom，focus 与已确认主体）；缺失时读取 review_context 或默认中立。可带 `risk_resolution[]`，复审分类由 WorkBuddy 真实语义分析生成，不能仅凭风险编号未出现认定解决。
+
+例：`"edit":{"node_id":"b0004","kind":"partial","start":0,"end":10,"expected_text":"合同节点内逐字原文"}`。这里的数值只是结构示意，必须从实际节点计算，不能照抄。建议正文仍放 `proposed_clause`；没有该字段时禁止将解释文字自动写入合同。
+
+原有五种 category 保留；企业偏好或谈判建议按具体问题归类（无对应结构缺失/约定不明时用待核实事项），并以 risk_source 清楚区分，禁止把不符合偏好直接标为法律合规风险。HTML 采纳决定以 review_id + risk_id 区分，复审中的新风险编号不会继承旧风险的采纳决定。
 
 ### evidence 元素
 

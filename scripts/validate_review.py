@@ -204,7 +204,7 @@ def risk_signature(r):
     """
     spans = tuple(sorted(tuple(e["span"]) for e in r["evidence"] if e.get("span")))
     basis = tuple(sorted((b["law_id"], b["article_no"]) for b in r["legal_basis"]))
-    return (r["category"], _norm_title(r["title"]), _norm_title(r["conclusion"]), spans, basis)
+    return (r["category"], r.get('risk_source','legal'), r.get('preference_id',''), _norm_title(r["title"]), _norm_title(r["conclusion"]), spans, basis)
 
 
 def resolve_index_dir(p: str) -> Path:
@@ -232,6 +232,10 @@ def main():
     task_dir = Path(args.task_dir)
     contract = load_contract(task_dir)
     draft = read_json(task_dir / args.draft)
+    if isinstance(draft,list):
+        draft={'risks':draft}
+    if not isinstance(draft,dict) or not isinstance(draft.get('risks',[]),list):
+        raise ValueError('风险草稿格式不正确。')
     law_index = load_law_index(resolve_index_dir(args.index_dir))
 
     # 知识库完整性
@@ -239,12 +243,16 @@ def main():
     kb_notes = []
     for lid, law in law_index.items():
         meta = law["meta"]
-        complete = meta.get("article_count", 0) > 0 and len(law["by_no"]) == meta.get("article_count", -1)
+        expected_count={'minfadian':1260,'laodonghetongfa':98,'gongsifa':266}.get(lid)
+        complete = expected_count is not None and len(law['by_no'])==meta.get('article_count')==expected_count and {a.get('no') for a in meta['articles']}==set(range(1,expected_count+1))
         kb_complete[lid] = complete
         if not complete:
             kb_notes.append(f"{meta['law_name']} 索引不完整")
     if not law_index:
         kb_notes.append("法律知识库为空，无法进行任何法律引用校验")
+    for expected in {'minfadian','laodonghetongfa','gongsifa'}-set(law_index):
+        kb_complete[expected]=False
+        kb_notes.append(f'法律知识库缺少 {expected}')
 
     risks = draft.get("risks", draft if isinstance(draft, list) else [])
     verified_risks = []
@@ -273,7 +281,23 @@ def main():
             "evidence": [],
             "legal_basis": [],
             "verification_status": {},
+            "risk_source":r.get('risk_source','legal'),
+            "preference_id":r.get('preference_id',''),
+            "objective_legal_conclusion":r.get('objective_legal_conclusion',''),
+            "edit":None,
         }
+        if vr['risk_source'] not in {'legal','company_policy','negotiation','experience'}:
+            vr['risk_source']='experience'
+            issues.append(f'{rid}: 未知风险来源，需人工核实')
+            stats['struct_errors']+=1
+        if vr['risk_source']!='legal' and vr['category']=='法律合规风险':
+            vr['category']='待核实事项'
+            issues.append(f'{rid}: 企业偏好不能直接作为违法依据，已标为待核实')
+            stats['struct_errors']+=1
+        if vr['risk_source']!='legal' and '违法' in vr['conclusion']:
+            vr['category']='待核实事项'
+            issues.append(f'{rid}: 偏好来源的违法表述需独立法律核实')
+            stats['struct_errors']+=1
         # 结构校验
         if cat not in CATEGORIES:
             issues.append(f"{rid}: 非法 category {cat!r}，已归为待核实事项")
@@ -299,6 +323,20 @@ def main():
             if not ve["verified"]:
                 stats["evidence_unverified"] += 1
             vr["evidence"].append(ve)
+
+        if isinstance(r.get('edit'),dict):
+            from revision_core import nodes_for
+            edit=dict(r['edit']);edit['verified']=False
+            node=next((n for n in nodes_for(contract) if n['node_id']==edit.get('node_id')),None)
+            start,end=edit.get('start'),edit.get('end')
+            if edit.get('kind')=='insert_clause':
+                group=[n for n in nodes_for(contract) if node and n['block_id']==node['block_id']]
+                edit['verified']=bool(node and group[-1]['node_id']==node['node_id'])
+            elif edit.get('kind') in {'partial','replace'} and node and node['editable'] and type(start)is int and type(end)is int and 0<=start<=end<=len(node['text']):
+                edit['verified']=node['text'][start:end]==edit.get('expected_text')
+                if edit['kind']=='replace' and (start!=0 or end!=len(node['text'])):edit['verified']=False
+            if not edit['verified']:issues.append(f'{rid}: 建议修改位置未通过核验，禁止自动应用')
+            vr['edit']=edit
 
         # 法条校验
         basis_list = r.get("legal_basis", [])
@@ -372,6 +410,18 @@ def main():
         r["orig_id"] = old
         r["risk_id"] = new
 
+    resolution=[]
+    for item in draft.get('risk_resolution',[]):
+        if not isinstance(item,dict):
+            issues.append('复审分类记录不是对象，需重新提供');continue
+        item=dict(item);target=item.get('current_risk_id')
+        if target in id_map:item['current_risk_id']=id_map[target]
+        elif target and target not in {r['risk_id'] for r in final_risks}:
+            item['status']='needs_confirmation';item['reason']='当前风险编号不存在，需 WorkBuddy 重新核对映射。'
+            issues.append('复审分类引用不存在的当前风险编号：'+str(target))
+            item.pop('current_risk_id',None)
+        resolution.append(item)
+
     result = {
         "contract": {
             "source_name": contract["source_name"],
@@ -392,10 +442,21 @@ def main():
             "scope_limitation": draft.get("scope_limitation", ""),
             "stats": stats,
             "issues": issues,
+            "schema_version":2,
+            "review_id":__import__('uuid').uuid4().hex,
+            "perspective":draft.get('perspective',read_json(task_dir/'review_context.json').get('perspective') if (task_dir/'review_context.json').exists() else {'mode':'neutral','focus':''}),
+            "risk_resolution":resolution,
         },
         "risks": final_risks,
         "risk_id_map": id_map,
     }
+    if (task_dir/'review_result.json').exists():
+        import uuid
+        archive=task_dir/'history'/uuid.uuid4().hex[:12]
+        for name in ['review_result.json','verified_review.json','contract_review.html','review_context.json']:
+            if (task_dir/name).exists():
+                archive.mkdir(parents=True,exist_ok=True)
+                (archive/name).write_bytes((task_dir/name).read_bytes())
     write_json(task_dir / args.out, result)
     # 验收规范要求的固定产物名：review_result.json（结构化风险结果）
     write_json(task_dir / "review_result.json", result)

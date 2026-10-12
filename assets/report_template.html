@@ -1,391 +1,282 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>__TITLE__</title>
+<!--
+WORKBUDDY TEMPLATE V2 / 数据接入约定（render_report.py 固定模板）
+1. report-data 是 review_result.json 的嵌入数据：{meta:{source_name,contract_type,reviewed_at,law_scope,scope_limitation,template_demo,alerts,categories_used},risks:[...]}。
+2. contractRoot 是确定性脚本生成的、经过 HTML 转义的合同结构；段落使用 data-bid。
+3. 已验证证据片段使用 <span class="mk mk-medium m-R001-0">原文</span>；多个风险可共享同一片段。
+4. 风险 risk_id 必须唯一，且仅允许 [A-Za-z0-9_-]；evidence.i 为非负整数。
+5. 风险字段沿用原版：risk_id,title,category,severity,conclusion,explanation,recommendation,
+   proposed_clause,manual_checks,scope_note,verification_status,evidence,legal_basis。
+6. evidence 沿用 i,quote,has_span,no_text,pos_desc,note,block_id；缺失项用 no_text=true，并可指定 block_id 作为插入位置。
+7. 生成器使用 json_for_script()（common.py）嵌入 JSON：转义 </ 与 U+2028/2029，等价于 < 变 \u003c。
+8. 所有真实审查由 WorkBuddy 与原脚本完成。本文件只渲染数据，不核验法条、不生成或裁定法律结论。
+9. meta.alerts 为字符串数组（解析状态/知识库/校验统计提示与免责声明），渲染进折叠的审查信息区；渲染器恒设 meta.template_demo=false。
+10. 无外部资源；双击即可打开。复制按钮不可用时提供可选中的文本供手动复制。
+11. 数据仅注入正式的数据脚本节点，合同结构仅注入正文容器，不在注释中重复嵌入。
+12. 本模板不含打印按钮、打印样式或打印功能（按需求明确排除）。
+-->
 <style>
 :root{
-  --c-high:#c5221f; --c-high-bg:#fce8e6;
-  --c-med:#b06000;  --c-med-bg:#fef1e0;
-  --c-low:#1a56b0;  --c-low-bg:#e8f0fe;
-  --c-rev:#5f6368;  --c-rev-bg:#f1f3f4;
-  --c-cur:#ffe94d;  --c-cur-border:#b8860b;
-  --bd:#dadce0; --tx:#202124; --tx2:#5f6368; --bg:#ffffff; --panel:#f8f9fa;
+ --brand:#2563eb;--brand-dark:#1d4ed8;--brand-tint:#eff6ff;--ink:#1e293b;--muted:#64748b;
+ --bg:#f3f5f9;--paper:#fff;--line:#e2e8f0;--soft:#f8fafc;
+ --high:#b4233a;--high-bg:#fff0f2;--medium:#9a4f16;--medium-bg:#fff3e9;
+ --low:#2563eb;--low-bg:#eef5ff;--review:#626879;--review-bg:#f1f2f6;
+ --focus:#fff0b3;--focus-edge:#eed681;--suggest:#edf4ff;--suggest-ink:#234989;
+ --radius:14px;--shadow:0 3px 18px rgba(33,50,83,.04);
 }
-*{box-sizing:border-box}
-html,body{margin:0;padding:0;background:var(--bg);color:var(--tx);
-  font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;font-size:14px}
-#topbar{position:sticky;top:0;z-index:50;background:var(--panel);border-bottom:1px solid var(--bd);
-  padding:10px 16px}
-#topbar h1{font-size:17px;margin:0 0 4px}
-#topbar .meta{color:var(--tx2);font-size:12px;line-height:1.7}
-.banner{margin-top:6px;padding:6px 10px;border-radius:6px;font-size:12.5px;line-height:1.6}
-.banner.warn{background:#fef7e0;border:1px solid #f9ab00}
-.banner.err{background:var(--c-high-bg);border:1px solid var(--c-high)}
-.banner.info{background:var(--c-low-bg);border:1px solid var(--c-low)}
-#layout{display:flex;align-items:flex-start;gap:0}
-#left{width:65%;height:calc(100vh - 96px);overflow-y:auto;padding:18px 24px 60px;
-  border-right:1px solid var(--bd)}
-#right{width:35%;height:calc(100vh - 96px);overflow-y:auto;padding:12px 14px 60px;background:var(--panel)}
-/* ---- 合同原文 ---- */
-.doc-title{font-size:18px;font-weight:700;text-align:center;margin:6px 0 14px}
-.blk{margin:0 0 8px;line-height:1.9;white-space:pre-wrap;word-break:break-word}
-.blk-heading{font-weight:700;margin-top:14px}
-.blk-table{white-space:normal;border-collapse:collapse;margin:8px 0;width:100%}
-.blk-table td,.blk-table th{border:1px solid var(--bd);padding:4px 8px;line-height:1.7;vertical-align:top}
-.blk-table tr:nth-child(1) td{background:#f5f6f7;font-weight:600}
-.blkno{color:#9aa0a6;font-size:10px;user-select:none;margin-right:6px;vertical-align:top}
-/* ---- 风险标记 ---- */
-.mk{border-radius:2px;padding:0 1px;cursor:pointer}
-.mk-high{box-shadow:inset 0 -2.5px 0 var(--c-high-bg);border-bottom:2px solid var(--c-high)}
-.mk-medium{box-shadow:inset 0 -2.5px 0 var(--c-med-bg);border-bottom:2px solid var(--c-med)}
-.mk-low{box-shadow:inset 0 -2.5px 0 var(--c-low-bg);border-bottom:2px solid var(--c-low)}
-.mk-review_required{box-shadow:inset 0 -2.5px 0 var(--c-rev-bg);border-bottom:2px dashed var(--c-rev)}
-.mk-active{background:#fff6b8}
-.mk-current{background:var(--c-cur);outline:2px solid var(--c-cur-border);outline-offset:1px}
-.srch-hit{background:#a8dab5;outline:1px solid #188038}
-/* ---- 右侧面板 ---- */
-.toolbar{position:sticky;top:-12px;background:var(--panel);padding:8px 0;z-index:10;
-  border-bottom:1px solid var(--bd);margin-bottom:10px}
-.toolbar input[type=search]{width:100%;padding:7px 10px;border:1px solid var(--bd);border-radius:6px;
-  font-size:13px;margin-bottom:8px}
-.frow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}
-.fchip{border:1px solid var(--bd);background:#fff;border-radius:14px;padding:2px 10px;font-size:12px;
-  cursor:pointer;user-select:none}
-.fchip.on{background:var(--tx);color:#fff;border-color:var(--tx)}
-.fchip.sev-high.on{background:var(--c-high);border-color:var(--c-high)}
-.fchip.sev-medium.on{background:var(--c-med);border-color:var(--c-med)}
-.fchip.sev-low.on{background:var(--c-low);border-color:var(--c-low)}
-.fchip.sev-review_required.on{background:var(--c-rev);border-color:var(--c-rev)}
-.stats{font-size:12px;color:var(--tx2);margin:6px 0}
-.card{border:1px solid var(--bd);border-radius:8px;background:#fff;margin-bottom:10px;overflow:hidden}
-.card.sel{border-color:var(--c-cur-border);box-shadow:0 0 0 2px #f5e6a3}
-.card-head{padding:10px 12px;cursor:pointer;display:flex;gap:8px;align-items:flex-start}
-.card-head .rid{font-weight:700;color:var(--tx2);font-size:12px;margin-top:2px;min-width:38px}
-.card-head .ttl{flex:1;font-weight:600;line-height:1.5}
-.badge{display:inline-block;font-size:11px;border-radius:10px;padding:1px 8px;margin-left:4px;
-  vertical-align:1px;white-space:nowrap}
-.badge.high{background:var(--c-high-bg);color:var(--c-high)}
-.badge.medium{background:var(--c-med-bg);color:var(--c-med)}
-.badge.low{background:var(--c-low-bg);color:var(--c-low)}
-.badge.review_required{background:var(--c-rev-bg);color:var(--c-rev)}
-.badge.cat{background:#e8eaed;color:#3c4043}
-.badge.v-verified{background:#e6f4ea;color:#137333}
-.badge.v-basis_unverified,.badge.v-evidence_unverified,.badge.v-partial{background:#fef7e0;color:#b06000}
-.badge.v-review_required{background:var(--c-rev-bg);color:var(--c-rev)}
-.card-body{display:none;padding:4px 14px 12px;border-top:1px dashed var(--bd);font-size:13px}
-.card.open .card-body{display:block}
-.sec{margin-top:10px}
-.sec h4{margin:0 0 4px;font-size:12.5px;color:var(--tx2);font-weight:600}
-.sec .body{line-height:1.75;white-space:pre-wrap;word-break:break-word}
-.ev{border-left:3px solid var(--bd);padding:4px 10px;margin:6px 0;background:#fafafa;border-radius:0 6px 6px 0}
-.ev.cur{border-left-color:var(--c-cur-border);background:#fffbe6}
-.ev .loc{font-size:11px;color:var(--tx2);margin-bottom:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.ev .q{line-height:1.7;word-break:break-word;white-space:pre-wrap}
-.ev .note{font-size:11.5px;color:#b06000;margin-top:3px}
-.evlink{cursor:pointer;color:var(--c-low);font-size:11px;text-decoration:underline;background:none;border:none;padding:0}
-.law{border:1px solid var(--bd);border-radius:6px;padding:6px 10px;margin:6px 0;background:#fff}
-.law .cite{font-weight:600;margin-bottom:3px}
-.law .ltxt{color:#3c4043;line-height:1.7;white-space:pre-wrap;word-break:break-word}
-.law .vstat{font-size:11.5px;margin-top:4px}
-.law .vstat.ok{color:#137333}.law .vstat.bad{color:var(--c-high)}.law .vstat.warn{color:#b06000}
-ul.checks{margin:4px 0;padding-left:20px;line-height:1.8}
-.proposed{background:#f0f7f0;border:1px dashed #34a853;border-radius:6px;padding:6px 10px;
-  line-height:1.7;white-space:pre-wrap;word-break:break-word}
-.empty{color:var(--tx2);padding:30px 10px;text-align:center}
-.btnrow{display:flex;gap:8px;margin-top:6px}
-.btn{border:1px solid var(--bd);background:#fff;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer}
-.btn:hover{background:#f1f3f4}
-/* ---- 打印 ---- */
-#print-only{display:none}
-@media print{
-  #topbar{position:static}
-  #right,.toolbar{display:none}
-  #layout{display:block}
-  #left{width:100%;height:auto;overflow:visible;border:none;padding:0}
-  .mk{background:none!important;outline:none!important;box-shadow:none!important;
-    border-bottom:1.5px solid #666}
-  #print-only{display:block;margin-top:24px;page-break-before:always}
-  #print-only table{border-collapse:collapse;width:100%;font-size:12px}
-  #print-only td,#print-only th{border:1px solid #999;padding:4px 6px;line-height:1.6;vertical-align:top}
-  #print-only h2{font-size:15px}
-}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font-family:"Inter","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);font-size:14px;background:var(--bg)}
+button,input,select{font:inherit}button,summary{cursor:pointer}button{color:inherit}
+button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,.mk:focus-visible{outline:3px solid #93b4fa;outline-offset:3px}
+button{border:0}button:disabled{cursor:default;opacity:.4}button:hover:not(:disabled){filter:brightness(.97)}
+button,.card,.mk{transition:background .15s,border-color .15s,box-shadow .15s}
+.app{height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr)}
+.header{background:var(--paper);border-bottom:1px solid var(--line);z-index:5}
+.topline{display:flex;align-items:center;gap:18px;padding:15px 26px;min-height:72px}
+.brand{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700;letter-spacing:-.4px;white-space:nowrap}
+.brand small{font-size:10px;font-weight:600;color:var(--brand);background:var(--brand-tint);padding:5px 8px;border-radius:5px;letter-spacing:1px}
+.divider{height:22px;width:1px;background:var(--line);flex-shrink:0}
+.document-name{min-width:0;flex:1}.document-name strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;font-weight:600}
+.document-name span{font-size:11px;color:var(--muted);display:block;margin-top:4px}
+.actions{display:flex;gap:8px;flex-shrink:0}.btn{background:white;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.4}
+.btn.primary{background:var(--brand);color:white;border-color:var(--brand)}
+.meta-disclosure{border-top:1px solid #f1f4f8}.meta-disclosure>summary{font-size:12px;color:var(--muted);padding:10px 26px;line-height:1.4;list-style-position:inside}
+.meta-disclosure>summary .brief{float:right;font-size:11px;color:#7b8799}
+.meta-grid{padding:6px 26px 18px;display:grid;grid-template-columns:1fr 1fr;gap:12px 30px;line-height:1.7;font-size:12px;color:var(--muted);max-height:35vh;overflow:auto}
+.meta-grid strong{display:block;color:var(--ink);font-size:11px;margin-bottom:3px}.meta-wide{grid-column:1/-1}
+.scope-note{padding:12px 14px;border:1px solid #dce7fa;background:#f5f8ff;border-radius:8px;color:#586b8b}
+.workspace{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(395px,1fr);min-height:0;gap:18px;padding:18px 22px 16px}
+.panel{min-height:0;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+.panel-head{padding:17px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-shrink:0}
+.panel-title{font-weight:700;font-size:14px;flex:1}.panel-title small{font-size:11px;font-weight:400;color:var(--muted);margin-left:10px}
+.pill{padding:4px 9px;border-radius:6px;background:var(--soft);font-size:11px;color:var(--muted);white-space:nowrap}
+.search-row{display:flex;gap:6px;align-items:center;padding:11px 20px;border-bottom:1px solid #edf1f6;background:#fdfefe;flex-shrink:0}
+.search-row input{min-width:0;width:100%;border:0;outline:0;padding:5px 0;background:none;font-size:12px;color:var(--ink)}
+.search-row input:focus-visible{outline:2px solid #93b4fa;border-radius:3px}.search-row .btn{padding:5px 9px;white-space:nowrap}
+.search-count{font-size:10px;color:var(--muted);white-space:nowrap;min-width:35px;text-align:center}
+.doc-scroll{overflow:auto;flex:1;min-height:0;padding:30px 26px 65px;background:#f9fafc;scroll-behavior:smooth;scrollbar-gutter:stable}
+.paper{max-width:900px;min-height:100%;margin:0 auto;background:white;padding:42px 44px 55px;border:1px solid #edf0f5;box-shadow:0 2px 14px #24395905}
+.doc-title{text-align:center;font-weight:700;font-size:22px;letter-spacing:1px;margin:0 0 34px}
+.blk{position:relative;margin:0 0 13px;white-space:pre-wrap;line-height:2.15;word-break:break-word;font-size:14px;color:#334155;scroll-margin-block:70px}
+.blk-heading{font-weight:700;color:#1e293b;margin-top:24px}.blkno{display:none}.blk-table{width:100%;border-collapse:collapse;margin:12px 0}.blk-table td,.blk-table th{border:1px solid var(--line);padding:8px 10px;line-height:1.8;vertical-align:top}
+.mk{padding:2px 0;border-radius:3px;cursor:pointer;box-decoration-break:clone;-webkit-box-decoration-break:clone;border:0!important;text-decoration:none!important;box-shadow:none}
+.mk-high{background:#fff1f3}.mk-medium{background:#fff4ea}.mk-low{background:#eef5ff}.mk-review_required{background:#f0f1f5}
+.mk:hover{background:#e7efff}.mk-active{background:var(--focus)!important;box-shadow:0 1px 0 var(--focus-edge)}
+.mk-current{background:#ffe9a2!important;box-shadow:0 1px 0 var(--focus-edge)}
+.blk.anchor-current{background:#f0f5ff;box-shadow:-3px 0 0 #7c9deb;border-radius:3px}
+mark.search-hit{color:inherit;background:#dbeafe;border-radius:2px}.search-hit.search-current{background:#bfdbfe;outline:1px solid #93b4fa}
+.doc-footer{display:flex;justify-content:space-between;gap:10px;padding:10px 20px;border-top:1px solid var(--line);font-size:10px;color:var(--muted);background:white;flex-shrink:0}
+.legend{display:flex;gap:10px;align-items:center}.legend-label{padding:2px 6px;background:var(--focus);border-radius:3px;color:#665c37}.doc-footer #locStatus{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.risk-panel{background:#f9faff}.risk-panel>.panel-head{background:white;padding-bottom:15px}
+.count{background:var(--brand-tint);color:var(--brand);font-size:11px;padding:3px 7px;border-radius:5px;margin-left:7px}
+.tools{padding:15px 18px 13px;border-bottom:1px solid var(--line);background:white;flex-shrink:0}
+.filters{display:flex;gap:5px;flex-wrap:wrap}.filter{font-size:11px;padding:7px 10px;border-radius:7px;background:var(--soft);color:var(--muted);border:1px solid transparent}
+.filter[aria-pressed=true]{color:var(--brand-dark);background:var(--brand-tint);border-color:#dbe7ff;font-weight:600}
+.filter-row{display:flex;gap:8px;margin-top:11px}.filter-row select,.filter-row input{border:1px solid var(--line);background:white;padding:8px 9px;border-radius:7px;font-size:11px;min-width:0}.filter-row input{flex:1}.filter-row select{max-width:140px}
+.results-meta{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:12px}.text-btn{padding:0;background:none;color:var(--brand);font-size:11px}
+.risk-scroll{padding:15px 16px 35px;flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable}
+.card{border:1px solid #e5eaf1;border-radius:12px;background:white;margin-bottom:12px;overflow:hidden;scroll-margin:14px}
+.card[open]{border-color:#bccff5;box-shadow:0 2px 12px #2563eb07}.card.selected{border-color:#9abaf4}
+.card>summary{padding:16px;list-style:none;display:flex;gap:10px;align-items:flex-start}.card>summary::-webkit-details-marker{display:none}
+.card>summary:before{content:none}.risk-number{font-size:10px;color:#92a0b3;padding-top:4px;white-space:nowrap;min-width:28px;font-variant-numeric:tabular-nums}
+.card-heading{flex:1;min-width:0}.card-heading h3{font-size:13px;line-height:1.7;margin:0;font-weight:600}.card-meta{display:flex;gap:6px;margin-top:7px;align-items:center;flex-wrap:wrap}
+.badge{font-size:10px;padding:3px 7px;border-radius:5px;line-height:1.3;white-space:nowrap}.badge.high{color:var(--high);background:var(--high-bg)}.badge.medium{color:var(--medium);background:var(--medium-bg)}.badge.low{color:var(--low);background:var(--low-bg)}.badge.review_required{color:var(--review);background:var(--review-bg)}
+.category{font-size:10px;color:#7c899c}.disclosure-label{display:block;color:var(--brand);font-size:10px;white-space:nowrap;margin-top:4px}.when-open{display:none}.card[open] .when-open{display:inline}.card[open] .when-closed{display:none}
+.card-body{padding:0 16px 17px}.context-line{font-size:12px;line-height:1.85;color:#59677d;margin:0 0 14px;padding:12px 0 0;border-top:1px solid #eef1f7;white-space:pre-wrap;overflow-wrap:anywhere}
+.feature{border-radius:9px;margin:12px 0;padding:14px}.feature h4{font-size:12px;margin:0 0 9px;color:var(--suggest-ink);display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700}.feature .body{font-size:12px;line-height:1.95;white-space:pre-wrap;overflow-wrap:anywhere}
+.recommendation{background:var(--suggest);border:1px solid #dce8ff}.clause{border:1px solid #A7F3D0;border-left:3px solid #34D399;background:#ECFDF5;padding:16px}.clause h4{font-size:13px;color:#166534}.clause .body{color:#1e293b;background:transparent;padding:12px;border-radius:6px;border:1px solid #A7F3D0}.clause-nav{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0 12px;font-size:10px;color:#64748b}.clause-nav .text-btn{font-weight:600;font-size:11px}.clause-status{color:#166534;font-size:10px}.context-line{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.copy{font-size:10px;padding:4px 8px;background:#ECFDF5;border:1px solid #A7F3D0;color:#166534;border-radius:5px;white-space:nowrap}.clause .copy:hover{background:#D1FAE5}.clause .placeholder,.clause .suggestion-note{color:#456857}
+.placeholder{font-size:11px;line-height:1.8;color:var(--muted)}.suggestion-note{font-size:10px;line-height:1.7;color:#8995a7;margin-top:9px}
+.subdetails{border-top:1px solid #eef1f6;margin-top:12px}.subdetails>summary{padding:11px 0 5px;list-style-position:inside;color:var(--muted);font-size:11px}.subdetails p{font-size:11px;line-height:1.9;color:#637086;white-space:pre-wrap;overflow-wrap:anywhere}
+.evidence-label{font-size:10px;color:var(--muted);margin:15px 0 7px}.evidence-tabs{display:flex;flex-wrap:wrap;gap:6px}.ev-btn{font-size:10px;padding:6px 9px;background:#f6f8fc;color:#52637d;border:1px solid #e7edf6;border-radius:5px}.ev-btn.active{background:var(--brand-tint);color:var(--brand);border-color:#bfd4fa}
+.ev{font-size:11px;line-height:1.8;border-left:2px solid #ccdbf3;padding:7px 10px;background:#f9fbff;margin-top:9px;white-space:pre-wrap;overflow-wrap:anywhere}.ev-note{font-size:10px;color:var(--muted);margin-top:7px;line-height:1.7}
+.law{margin:10px 0;padding:11px;background:var(--soft);border-radius:7px}.law strong{font-size:11px;color:#52637c}.law p{margin:7px 0}.verification{font-size:10px;color:var(--muted);line-height:1.8}.manual{font-size:11px;line-height:1.9;color:#59677d;padding-left:18px}.empty{padding:50px 18px;text-align:center;color:var(--muted);font-size:12px;line-height:2}
+.risk-footer{padding:10px 18px;border-top:1px solid var(--line);background:white;font-size:10px;color:var(--muted);flex-shrink:0}
+.focus-mode .workspace{grid-template-columns:minmax(0,1fr)}.focus-mode .risk-panel{display:none}.focus-mode .paper{max-width:1000px}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#263854;color:white;border-radius:9px;padding:10px 18px;font-size:12px;z-index:99;box-shadow:0 5px 22px #1e293b25;max-width:90vw;text-align:center}.toast[hidden]{display:none}
+@media(min-width:1700px){.paper{padding:48px 56px}.workspace{grid-template-columns:minmax(0,1.8fr) minmax(480px,1fr)}.blk{font-size:15px}.feature .body{font-size:13px}}
+@media(max-width:1150px){.workspace{padding:12px;gap:12px;grid-template-columns:minmax(0,1.45fr) minmax(365px,1fr)}.paper{padding:30px 26px}.doc-scroll{padding:20px 16px}.topline{padding:13px 18px}.brand small{display:none}.panel-head{padding:15px}.document-name span{display:none}}
+@media(max-width:760px){.app{height:auto;min-height:100dvh}.topline{gap:10px;flex-wrap:wrap;padding:12px 14px;min-height:65px}.brand{font-size:15px}.divider{display:none}.document-name{order:3;flex-basis:100%;font-size:11px}.actions{margin-left:auto}.actions .btn{font-size:11px;padding:7px 9px}.meta-disclosure>summary{padding:9px 14px}.brief{display:none}.meta-grid{grid-template-columns:1fr;padding:10px 14px}.workspace{display:flex;flex-direction:column;padding:10px;gap:12px}.document-panel{height:62dvh;min-height:350px}.risk-panel{min-height:350px}.risk-scroll{overflow:visible}.risk-panel .tools{position:sticky;top:0;z-index:4}.paper{padding:26px 20px}.doc-scroll{padding:14px 10px}.doc-title{font-size:18px}.blk{font-size:13px}.panel-title small{display:none}.focus-mode .document-panel{height:80dvh}.doc-footer{font-size:9px}.meta-grid{max-height:40vh}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+.workflow-tools{padding:8px 26px 12px;border-top:1px solid var(--line);font-size:12px}
+.workflow-tools>summary{color:var(--muted);padding:5px 0}.workflow-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.workflow-tools[open]{max-height:38vh;overflow:auto}.header>.editor-message{padding:5px 26px;margin:0;border-top:1px solid #eef1f7}
+.workflow-row label{display:flex;align-items:center;gap:6px}.workflow-row input,.workflow-row select,.edit-form select,.edit-form textarea,.handoff textarea{font:inherit;border:1px solid var(--line);border-radius:7px;padding:8px;background:#fdfefe;color:var(--ink)}
+.workflow-row input[type=text]{min-width:180px;flex:1}.save-state{font-size:11px;color:#8a4a12}.editing-toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:10px 18px;border-bottom:1px solid var(--line);background:#f6f9ff;font-size:11px}
+.editing-toolbar label{display:flex;gap:5px;align-items:center}.editing-toolbar select{border:1px solid var(--line);background:#fdfefe;border-radius:5px;padding:5px;font:inherit}
+.edit-form{padding:12px 18px;background:#f5f8ff;border-bottom:1px solid var(--line);flex-shrink:0;max-height:45vh;overflow:auto;font-size:12px}.edit-form label{display:block;margin:6px 0}.edit-form select,.edit-form textarea{display:block;width:100%;margin:5px 0}.edit-form textarea{min-height:80px;resize:vertical}.edit-form pre{white-space:pre-wrap;max-height:65px;overflow:auto;font:inherit;background:#eef2f8;padding:8px;border-radius:5px}
+.revision-deleted{color:#b4233a;background:#fff0f2;text-decoration:line-through}.revision-added{color:#166534;background:#dcfce7;text-decoration:none;border-bottom:1px solid #86cfa1}
+.editable-node:focus-visible{outline:2px solid #93b4fa;outline-offset:3px}.changed-node{background:#f3faf6}.stale-note,.readonly-note{display:block;font-size:10px;color:#81622e;line-height:1.6;white-space:normal}.readonly-note{color:var(--muted)}
+.suggestion-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.suggestion-actions .btn{font-size:11px;padding:7px 9px}.risk-origin{font-size:11px;color:#8a5a17;margin-bottom:9px}.editor-message{font-size:11px;color:#456383;line-height:1.7;max-width:100%;padding:5px 0}.editor-message.error{color:#a2233a}
+.handoff,.completion{background:#f5f8ff;border:1px solid #dce7fa;border-radius:8px;padding:12px;margin:8px 0;font-size:12px}.handoff textarea{width:100%;min-height:100px;resize:vertical}.history-list{max-height:150px;overflow:auto;font-size:11px;color:var(--muted);padding-left:20px}.history-list li{padding:4px 0}
+[hidden]{display:none!important}.file-label input{max-width:200px;font-size:11px}.clause{border-left:1px solid #A7F3D0}
+@media(max-width:760px){.workflow-tools{padding:8px 14px}.editing-toolbar{padding:8px 10px}.edit-form{padding:10px;max-height:45vh}.workflow-row{align-items:flex-start}.topline .actions{flex-wrap:wrap}.save-state{font-size:10px}}
+
 </style>
 </head>
 <body>
-<div id="topbar">
-  <h1 id="docTitle">__TITLE__</h1>
-  <div class="meta" id="metaLine"></div>
-  <div id="banners">__BANNERS_HTML__</div>
-</div>
-<div id="layout">
-  <div id="left">
-    <div id="contractRoot">__CONTRACT_HTML__</div>
+<div class="app" id="app">
+<header class="header">
+ <div class="topline">
+  <div class="brand">合同审查 <small>LEGAL REVIEW</small></div><span class="divider"></span>
+  <div class="document-name"><strong id="sourceName"></strong><span id="demoLabel">界面模板演示 · 展示附件已有结果，未经重新审查</span></div>
+  <div class="actions"><button class="btn" id="focusBtn" aria-pressed="false">专注原文</button><button class="btn" id="downloadRevisions">下载修订 JSON</button><button class="btn primary" id="finishEditing">完成编辑</button></div>
+ </div>
+ <details class="meta-disclosure" id="reviewMeta">
+  <summary>查看审查信息与范围 <span class="brief" id="summaryBrief"></span></summary>
+  <div class="meta-grid" id="metaContent"></div>
+ </details>
+ <details class="workflow-tools" id="workflowTools">
+  <summary>审查视角、偏好与修订保存 <span id="saveState" class="save-state">尚无修改</span></summary>
+  <p id="preferencesInfo"></p>
+  <div class="workflow-row"><label>申请审查视角 <select id="perspectiveSelect"><option value="neutral">中立审查</option><option value="party_a">甲方视角</option><option value="party_b">乙方视角</option><option value="custom">自定义视角</option></select></label><input id="perspectiveFocus" type="text" aria-label="自定义重点" placeholder="重点关注事项，如回款、责任分配"><button class="btn" id="perspectiveRequest">生成视角切换请求</button><button class="btn" id="rereviewRequest">请求修改后复审</button></div>
+  <div class="workflow-row"><button class="btn" id="saveNative">选择文件并写入</button><label class="file-label">导入修订 JSON <input type="file" id="importRevisions" accept=".json,application/json"></label><button class="btn" id="confirmDownload" hidden>确认文件已保存</button><button class="btn" id="confirmEdits">确认当前有效修改</button><button class="btn" id="restoreOriginal">恢复原始内容</button></div>
+  <p id="cacheNotice" class="editor-message">临时恢复不能代替主动保存 JSON。下载后请检查文件是否落盘。</p><button class="btn" id="restoreCache" hidden>恢复浏览器临时记录</button>
+  <details><summary>查看修改历史 <span id="revisionCount">0 项有效修改</span></summary><ol id="historyList" class="history-list"></ol></details>
+  <div class="completion" id="completion" hidden><strong>编辑交接</strong><p id="completionText"></p><ul id="completionList"></ul></div>
+  <div class="handoff" id="handoffPanel" hidden><label for="handoffText">返回 WorkBuddy 后使用以下指令</label><textarea id="handoffText" readonly></textarea><button class="btn" id="copyHandoff">复制 WorkBuddy 指令</button></div>
+ </details>
+ <div id="editorStatus" class="editor-message" role="status" aria-live="polite">当前风险基于本次审查快照；编辑后须重新核实。</div>
+</header>
+<main class="workspace">
+ <section class="panel document-panel" aria-label="合同原文">
+  <div class="panel-head"><div class="panel-title">合同工作稿 <small>原始文件保留，修改独立记录</small></div></div>
+  <div class="editing-toolbar"><label><input id="editEnabled" type="checkbox">开启正文编辑</label><label>显示 <select id="displayMode"><option value="revision">修订模式</option><option value="clean">清洁模式</option></select></label><button class="btn" id="insertClause">插入新条款</button><button class="btn" id="undoBtn" disabled>撤销</button><button class="btn" id="redoBtn" disabled>恢复</button></div>
+  <section class="edit-form" id="editPanel" aria-label="编辑选中条款" hidden><label>目标节点<select id="targetNode" aria-label="目标节点"></select></label><label>操作<select id="editMode"><option value="replace">替换整个节点文字</option><option value="partial">替换已核验局部文字</option><option value="insert">在该段落或表格后插入新条款</option></select></label><pre id="editBefore"></pre><label>修改后文字<textarea id="editText"></textarea></label><label>修改原因<textarea id="editReason" rows="1"></textarea></label><button class="btn primary" id="applyEdit">确认应用</button> <button class="btn" id="cancelEdit">取消</button></section>
+  <div class="search-row"><input type="search" id="docSearch" aria-label="搜索合同原文" placeholder="搜索原文关键词…"><span class="search-count" id="docSearchCount"></span><button class="btn" id="prevHit" aria-label="上一处匹配">上一处</button><button class="btn" id="nextHit" aria-label="下一处匹配">下一处</button></div>
+  <div class="doc-scroll" id="left"><article class="paper" id="contractRoot">__CONTRACT_HTML__<div id="contractEnd" class="blk" aria-label="合同末尾建议插入位置"></div></article></div>
+  <div class="doc-footer"><span id="locStatus" role="status" aria-live="polite">选择右侧风险，即可定位原文</span><span class="legend"><span class="legend-label">当前定位</span></span></div>
+ </section>
+ <aside class="panel risk-panel" aria-label="风险与修改建议">
+  <div class="panel-head"><div class="panel-title">风险与修改建议 <span class="count" id="riskCount"></span></div><button class="text-btn" id="collapseAll">全部收起</button></div>
+  <div class="tools">
+   <div class="filters" id="severityFilters" aria-label="按风险等级筛选"></div>
+   <div class="filter-row"><input type="search" id="riskSearch" aria-label="搜索风险和建议" placeholder="搜索风险或建议…"><select id="categoryFilter" aria-label="按风险类型筛选"><option value="">全部类型</option></select></div>
+   <div class="results-meta"><span id="resultCount"></span><button class="text-btn" id="resetFilters">重置筛选</button></div>
   </div>
-  <div id="right">
-    <div class="toolbar">
-      <input type="search" id="kw" placeholder="关键词搜索合同原文，回车定位，可连续按 F3 式下一个">
-      <div class="btnrow">
-        <button class="btn" id="kwPrev">上一个</button>
-        <button class="btn" id="kwNext">下一个</button>
-        <button class="btn" id="kwClear">清除</button>
-        <button class="btn" id="btnPrint">打印</button>
-        <button class="btn" id="btnExpand">全部展开</button>
-      </div>
-      <div class="frow" id="sevFilter"></div>
-      <div class="frow" id="catFilter"></div>
-      <div class="stats" id="stats"></div>
-    </div>
-    <div id="cards"></div>
-    <div class="empty" id="noResult" style="display:none">无符合筛选条件的风险</div>
-  </div>
+  <div class="risk-scroll" id="riskList"></div>
+  <div class="risk-footer">中立审查 · 法律合规与条款完整性 · 建议条款需结合事实确认</div>
+ </aside>
+</main>
 </div>
-<div id="print-only">__PRINT_SUMMARY_HTML__</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<noscript><p>请启用浏览器 JavaScript 以查看风险卡片和使用定位功能。</p></noscript>
+<script type="application/json" id="report-data">__DATA_JSON__</script>
 <script>
-"use strict";
-const DATA = __DATA_JSON__;
-const SEV_LABEL = {high:"高风险",medium:"中风险",low:"低风险",review_required:"待核实"};
-const V_LABEL = {verified:"已核验",basis_unverified:"法律依据待核实",evidence_unverified:"原文定位待核实",
-  partial:"部分核验",review_required:"需人工核实"};
-function esc(s){if(s===null||s===undefined)return "";return String(s)
-  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-  .replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
-const $ = s=>document.querySelector(s);
-const leftEl = $("#left");
-
-/* ---------- 状态 ---------- */
-const state = {sev:new Set(),cat:new Set(),selected:null,curEv:0,kwHits:[],kwIdx:-1};
-
-/* ---------- 筛选器 ---------- */
-function buildFilters(){
-  const sevBox=$("#sevFilter"),catBox=$("#catFilter");
-  sevBox.innerHTML='<span class="fchip on" data-sev="*">全部等级</span>'+
-    ["high","medium","low","review_required"].map(s=>
-      `<span class="fchip sev-${s} on" data-sev="${s}">${SEV_LABEL[s]} ${countSev(s)}</span>`).join("");
-  const cats=DATA.meta.categories_used||[];
-  catBox.innerHTML='<span class="fchip on" data-cat="*">全部类型</span>'+
-    cats.map(c=>`<span class="fchip on" data-cat="${esc(c)}">${esc(c)} ${countCat(c)}</span>`).join("");
-  cats.forEach(c=>state.cat.add(c));
-  ["high","medium","low","review_required"].forEach(s=>state.sev.add(s));
-  sevBox.querySelectorAll(".fchip").forEach(ch=>ch.addEventListener("click",()=>{
-    const v=ch.dataset.sev;
-    if(v==="*"){const all=state.sev.size===4;state.sev=new Set(["high","medium","low","review_required"]);
-      if(all)state.sev.clear();
-      sevBox.querySelectorAll(".fchip[data-sev]").forEach(x=>{if(x.dataset.sev!=="*")
-        x.classList.toggle("on",state.sev.has(x.dataset.sev));});}
-    else{state.sev.has(v)?state.sev.delete(v):state.sev.add(v);ch.classList.toggle("on",state.sev.has(v));}
-    renderCards();}));
-  catBox.querySelectorAll(".fchip").forEach(ch=>ch.addEventListener("click",()=>{
-    const v=ch.dataset.cat;
-    if(v==="*"){const allCats=cats.every(c=>state.cat.has(c));
-      state.cat=new Set(allCats?[]:cats);
-      catBox.querySelectorAll(".fchip[data-cat]").forEach(x=>{if(x.dataset.cat!=="*")
-        x.classList.toggle("on",state.cat.has(x.dataset.cat));});}
-    else{state.cat.has(v)?state.cat.delete(v):state.cat.add(v);ch.classList.toggle("on",state.cat.has(v));}
-    renderCards();}));
+'use strict';
+const DATA=JSON.parse(document.getElementById('report-data').textContent);
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const labels={high:'高风险',medium:'中风险',low:'低风险',review_required:'待核实'};
+const vlabels={verified:'数据标注：已核验',review_required:'需人工核实',partial:'部分核验',basis_unverified:'法律依据待核实',evidence_unverified:'原文定位待核实'};
+const risks=Array.isArray(DATA.risks)?DATA.risks:[];
+const validId=id=>/^[A-Za-z0-9_-]+$/.test(String(id));
+const state={severity:'',category:'',query:'',selected:null,evidence:0,hits:[],hit:-1};
+let toastTimer,docSearchTimer;
+function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,3000)}
+function evidenceIndex(e,j){return Number.isInteger(e.i)&&e.i>=0?e.i:j}
+function marksFor(r,i){return validId(r.risk_id)?Array.from(document.getElementsByClassName('m-'+r.risk_id+'-'+i)):[]}
+function blockFor(id){return Array.from($('#contractRoot').querySelectorAll('[data-bid]')).find(e=>e.dataset.bid===String(id))}
+function clearLocation(){document.querySelectorAll('.mk-active,.mk-current,.anchor-current').forEach(e=>e.classList.remove('mk-active','mk-current','anchor-current'));document.querySelectorAll('.card.selected').forEach(e=>e.classList.remove('selected'))}
+function locate(r,j=0){
+ clearLocation();state.selected=r.risk_id;state.evidence=j;
+ const card=document.getElementById('card-'+r.risk_id);if(card)card.classList.add('selected');
+ document.querySelectorAll('.ev-btn').forEach(b=>b.classList.toggle('active',b.dataset.risk===r.risk_id&&Number(b.dataset.evidence)===j));
+ const evidence=Array.isArray(r.evidence)?r.evidence:[],ev=evidence[j];
+ const view=card?.querySelector('.evidence-view');if(view)view.innerHTML=ev?evidenceView(ev):'<div class="ev-note">此项无直接原文证据，无法定位。</div>';
+ if(!ev){$('#locStatus').textContent=r.risk_id+' · 无直接原文';return}
+ const marks=ev.has_span?marksFor(r,evidenceIndex(ev,j)):[];
+ evidence.forEach((e,k)=>{if(e.has_span)marksFor(r,evidenceIndex(e,k)).forEach(n=>n.classList.add('mk-active'))});
+ if(marks.length){marks.forEach(n=>n.classList.add('mk-current'));marks[0].scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});$('#locStatus').textContent=r.risk_id+' · 证据 '+(j+1)+'/'+evidence.length+' · '+(ev.pos_desc||'已定位原文');return}
+ const anchor=ev.no_text?(ev.block_id?blockFor(ev.block_id):$('#contractEnd')):null;
+ if(anchor){anchor.classList.add('anchor-current');anchor.scrollIntoView({behavior:'smooth',block:'center'});$('#locStatus').textContent=r.risk_id+' · 无直接原文，已定位建议插入位置';return}
+ $('#locStatus').textContent=r.risk_id+(ev.no_text?' · 无直接原文；未指定插入位置':' · 定位失败，未匹配到已验证的原文片段');
 }
-function countSev(s){return DATA.risks.filter(r=>r.severity===s).length;}
-function countCat(c){return DATA.risks.filter(r=>r.category===c).length;}
-
-/* ---------- 风险卡片 ---------- */
-function evidenceHtml(r,ev){
-  const i=ev.i;
-  let loc=ev.has_span?`定位：${esc(ev.pos_desc||ev.block_id||"原文")}`:"";
-  if(ev.no_text)loc=ev.pos_desc||"无直接原文";
-  if(!ev.has_span&&!ev.no_text)loc=ev.pos_desc||"未能定位";
-  return `<div class="ev" id="ev-${r.risk_id}-${i}" data-rid="${r.risk_id}" data-i="${i}">
-    <div class="loc"><b>证据${i+1}</b> <span>${loc}</span>
-      ${ev.has_span?`<button class="evlink" data-goto="${r.risk_id}:${i}">滚动定位</button>`:""}
-    </div>
-    ${ev.quote?`<div class="q">“${esc(ev.quote)}”</div>`:""}
-    ${ev.note?`<div class="note">${esc(ev.note)}</div>`:""}
-  </div>`;
+function evidenceView(e){return (e.quote?'<div class="ev">'+esc(e.quote)+'</div>':'')+'<div class="ev-note">'+esc(e.no_text?'无直接原文'+(e.block_id?' · 仅定位建议插入位置':''):e.pos_desc||'定位信息未提供')+(e.note?' · '+esc(e.note):'')+'</div>'}
+function cardHTML(r){
+ const evidence=Array.isArray(r.evidence)?r.evidence:[],basis=Array.isArray(r.legal_basis)?r.legal_basis:[];
+ const checks=Array.isArray(r.manual_checks)?r.manual_checks:[];
+ const clause=String(r.proposed_clause??'').trim(),recommendation=String(r.recommendation??'').trim();
+ const status=typeof r.verification_status==='object'?r.verification_status?.overall:r.verification_status;
+ const sev=Object.hasOwn(labels,r.severity)?r.severity:'review_required';
+ return '<details class="card" id="card-'+esc(r.risk_id)+'" data-risk="'+esc(r.risk_id)+'">'+
+ '<summary><span class="risk-number">'+esc(r.risk_id)+'</span><div class="card-heading"><h3>'+esc(r.title)+'</h3><div class="card-meta"><span class="badge '+sev+'">'+labels[sev]+'</span><span class="category">'+esc(r.category)+'</span></div></div><span class="disclosure-label"><span class="when-closed">展开 ▾</span><span class="when-open">收起 ▴</span></span></summary>'+
+ '<div class="card-body"><div class="clause-nav"><span>'+ (clause?'本项已附建议条款示例':'本项建议条款待补充')+'</span><button class="text-btn" data-show-clause="'+esc(r.risk_id)+'">查看条款示例</button></div><p class="context-line">'+esc(r.conclusion||r.explanation||'未提供风险说明')+'</p>'+
+ '<section class="feature recommendation"><h4>修改与补充建议</h4><div class="body">'+(recommendation?esc(recommendation):'<span class="placeholder">此项尚未提供修改建议，需要补充。</span>')+'</div></section>'+
+ '<section class="feature clause" tabindex="-1"><h4>建议条款示例'+(clause?'<button class="copy" data-copy="'+esc(r.risk_id)+'">复制条款</button>':'')+'</h4><div class="body">'+(clause?esc(clause):'<span class="placeholder">待补充：原报告未生成本项的建议条款示例。适合修改或补充条款的事项，应结合事实与依据生成可参考文本；仅能列为待核实的事项，应说明暂不拟写的原因。</span>')+'</div><div class="suggestion-note">供修改时参考；请核实事实、金额、日期及适用条件。</div></section>'+
+ '<div class="evidence-label">原文定位'+(evidence.length?' · '+evidence.length+' 处证据':'')+'</div><div class="evidence-tabs">'+evidence.map((e,j)=>'<button class="ev-btn" data-risk="'+esc(r.risk_id)+'" data-evidence="'+j+'">'+(e.no_text?'建议插入位置':'证据 '+(j+1))+'</button>').join('')+'</div><div class="evidence-view">'+(evidence[0]?evidenceView(evidence[0]):'<div class="ev-note">无直接原文证据。</div>')+'</div>'+
+ '<details class="subdetails"><summary>风险解释与法律依据'+(basis.length?' · '+basis.length+' 项':'')+'</summary>'+ (r.conclusion?'<p>'+esc(r.conclusion)+'</p>':'')+(r.explanation?'<p>'+esc(r.explanation)+'</p>':'')+
+ basis.map(b=>'<div class="law"><strong>'+esc(b.law_name||b.law_id)+' '+esc(b.article_no)+'</strong><div class="verification">版本：'+esc(b.version||'未提供')+' · '+(b.status==='verified'?'原数据标注已核验':'依据待核实：'+esc(b.status||'未提供'))+'</div><p>'+esc(b.kb_text||b.cited_text||'未提供条文内容')+'</p></div>').join('')+
+ (!basis.length?'<p>此项未附法律条文，请结合风险类型判断其属于完整性建议或待核实事项，不应据此作违法结论。</p>':'')+
+ '<div class="verification">'+esc(vlabels[status]||'核验状态未提供')+(DATA.meta?.template_demo?' · 本模板未重新核验':'')+'</div></details>'+
+ (checks.length||r.scope_note?'<details class="subdetails"><summary>人工核实与范围说明</summary><ul class="manual">'+checks.map(c=>'<li>'+esc(c)+'</li>').join('')+'</ul>'+(r.scope_note?'<p>'+esc(r.scope_note)+'</p>':'')+'</details>':'')+'</div></details>';
 }
-function basisHtml(b){
-  const vcls=b.status==="verified"?"ok":(b.status==="not_found"||b.status==="mismatch")?"bad":"warn";
-  let vtxt;
-  if(b.status==="verified")vtxt="✔ 条号与条文已对照知识库核验一致";
-  else if(b.status==="not_found")vtxt="✘ 所引法条未在知识库中找到（"+esc(b.note)+"）——不得作为审查依据，需人工核实";
-  else if(b.status==="mismatch")vtxt="✘ 所引条文与知识库该条号原文不一致——不得作为审查依据，需人工核实";
-  else if(b.status==="kb_incomplete")vtxt="⚠ "+esc(b.note);
-  else vtxt=esc(b.status);
-  const showText=b.status==="mismatch"?
-    `引用文本：“${esc(b.cited_text)}”<br>知识库原文：“${esc(b.kb_text||"（该条号不存在）")}”`:
-    esc(b.kb_text||b.cited_text||"");
-  return `<div class="law">
-    <div class="cite">${esc(b.law_name||b.law_id)}（${esc(b.version||"")}）${esc(b.article_no)}</div>
-    <div class="ltxt">${showText}</div>
-    <div class="vstat ${vcls}">${vtxt}</div>
-  </div>`;
-}
-function cardHtml(r){
-  const v=r.verification_status||{};
-  const vstat=v.overall||"review_required";
-  return `<div class="card" id="card-${r.risk_id}" data-rid="${r.risk_id}" data-sev="${r.severity}" data-cat="${esc(r.category)}">
-    <div class="card-head">
-      <span class="rid">${r.risk_id}</span>
-      <span class="ttl">${esc(r.title)}
-        <span class="badge ${r.severity}">${SEV_LABEL[r.severity]||r.severity}</span>
-        <span class="badge cat">${esc(r.category)}</span>
-        <span class="badge v-${vstat}">${V_LABEL[vstat]||vstat}</span>
-      </span>
-    </div>
-    <div class="card-body">
-      ${r.conclusion?`<div class="sec"><h4>风险判断</h4><div class="body">${esc(r.conclusion)}</div></div>`:""}
-      ${r.explanation?`<div class="sec"><h4>具体原因</h4><div class="body">${esc(r.explanation)}</div></div>`:""}
-      <div class="sec"><h4>原文证据（点击“滚动定位”或风险标题可跳转）</h4>
-        ${r.evidence&&r.evidence.length?r.evidence.map(ev=>evidenceHtml(r,ev)).join("")
-          :`<div class="note" style="color:#5f6368">本条无原文证据</div>`}
-      </div>
-      ${r.legal_basis&&r.legal_basis.length?`<div class="sec"><h4>法律依据</h4>${r.legal_basis.map(basisHtml).join("")}</div>`
-        :`<div class="sec"><h4>法律依据</h4><div class="body" style="color:#5f6368">未引用具体法条${r.scope_note?"（"+esc(r.scope_note)+"）":""}</div></div>`}
-      ${r.recommendation?`<div class="sec"><h4>修改/补充建议</h4><div class="body">${esc(r.recommendation)}</div></div>`:""}
-      ${r.proposed_clause?`<div class="sec"><h4>建议条款示例</h4><div class="proposed">${esc(r.proposed_clause)}</div></div>`:""}
-      ${r.manual_checks&&r.manual_checks.length?`<div class="sec"><h4>人工核实事项</h4><ul class="checks">${
-        r.manual_checks.map(m=>`<li>${esc(m)}</li>`).join("")}</ul></div>`:""}
-    </div>
-  </div>`;
-}
+function visibleRisks(){const q=state.query.toLocaleLowerCase();return risks.filter(r=>(!state.severity||r.severity===state.severity)&&(!state.category||r.category===state.category)&&(!q||[r.title,r.conclusion,r.explanation,r.recommendation,r.proposed_clause,r.risk_id].join(' ').toLocaleLowerCase().includes(q)))}
 function renderCards(){
-  const box=$("#cards");
-  const list=DATA.risks.filter(r=>state.sev.has(r.severity)&&state.cat.has(r.category));
-  box.innerHTML=list.map(cardHtml).join("");
-  $("#noResult").style.display=list.length?"none":"block";
-  $("#stats").textContent=`显示 ${list.length} / ${DATA.risks.length} 条风险`;
-  box.querySelectorAll(".card-head").forEach(h=>h.addEventListener("click",e=>{
-    if(e.target.classList.contains("evlink"))return;
-    const rid=h.parentElement.dataset.rid;
-    const card=h.parentElement;
-    if(state.selected===rid&&card.classList.contains("open")){
-      card.classList.remove("open");clearMarks();state.selected=null;return;}
-    selectRisk(rid,0);}));
-  box.querySelectorAll(".evlink").forEach(b=>b.addEventListener("click",e=>{
-    e.stopPropagation();
-    const [rid,i]=b.dataset.goto.split(":");
-    selectRisk(rid,parseInt(i,10));}));
-  if(state.selected)markCardSelected(state.selected);
+ const opened=new Set(Array.from(document.querySelectorAll('.card[open]')).map(e=>e.dataset.risk));
+ const result=visibleRisks();$('#riskList').innerHTML=result.length?result.map(cardHTML).join(''):'<div class="empty">没有匹配的风险项<br>试试更换关键词或重置筛选</div>';
+ $('#resultCount').textContent='显示 '+result.length+' / '+risks.length+' 项';
+ document.querySelectorAll('.card').forEach(card=>{card.open=opened.has(card.dataset.risk);card.addEventListener('toggle',()=>{if(!card.isConnected)return;if(card.open){const r=risks.find(r=>r.risk_id===card.dataset.risk);locate(r,state.selected===r.risk_id?state.evidence:0)}else if(state.selected===card.dataset.risk){clearLocation();state.selected=null;$('#locStatus').textContent='选择右侧风险，即可定位原文'}})});
+ if(state.selected&&!result.some(r=>r.risk_id===state.selected)){clearLocation();state.selected=null;$('#locStatus').textContent='当前风险已被筛选隐藏'}
+ else if(state.selected){const r=risks.find(r=>r.risk_id===state.selected);locate(r,state.evidence)}
 }
-
-/* ---------- 高亮与定位 ---------- */
-function evSpans(rid,i){return document.querySelectorAll(".m-"+rid+"-"+i);}
-function clearMarks(){
-  document.querySelectorAll(".mk-active,.mk-current").forEach(el=>
-    el.classList.remove("mk-active","mk-current"));
-  document.querySelectorAll(".ev.cur").forEach(el=>el.classList.remove("cur"));
-  document.querySelectorAll(".card.sel").forEach(el=>el.classList.remove("sel"));
+function buildFilters(){
+ const entries=[['','全部',risks.length],...Object.entries(labels).map(([k,v])=>[k,v,risks.filter(r=>r.severity===k).length])];
+ $('#severityFilters').innerHTML=entries.map(([key,label,n])=>'<button class="filter" data-severity="'+key+'" aria-pressed="'+(state.severity===key)+'">'+label+' '+n+'</button>').join('');
 }
-function markCardSelected(rid){
-  const card=document.getElementById("card-"+rid);
-  if(card){card.classList.add("sel");card.classList.add("open");}
-}
-function selectRisk(rid,evIdx){
-  const r=DATA.risks.find(x=>x.risk_id===rid);
-  if(!r)return;
-  clearMarks();
-  state.selected=rid;
-  /* 该风险全部证据加 active（浅黄），当前证据加 current（亮黄+边框） */
-  let scrolled=false;
-  r.evidence.forEach(ev=>{
-    const spans=evSpans(rid,ev.i);
-    spans.forEach(s=>s.classList.add("mk-active"));
-    if(ev.i===evIdx){
-      spans.forEach(s=>s.classList.add("mk-current"));
-      const evBox=document.getElementById("ev-"+rid+"-"+ev.i);
-      if(evBox)evBox.classList.add("cur");
-      if(!scrolled&&spans.length){
-        spans[0].scrollIntoView({behavior:"smooth",block:"center"});
-        scrolled=true;}
-    }
-  });
-  state.curEv=evIdx;
-  markCardSelected(rid);
-  const card=document.getElementById("card-"+rid);
-  if(card)card.scrollIntoView({behavior:"smooth",block:"nearest"});
-}
-/* 点击左侧原文标记 -> 选中对应风险 */
-$("#contractRoot").addEventListener("click",e=>{
-  const t=e.target;
-  if(!t.classList||!t.classList.contains("mk"))return;
-  for(const c of t.classList){
-    const m=c.match(/^m-(R\d+)-(\d+)$/);
-    if(m){selectRisk(m[1],parseInt(m[2],10));return;}
-  }
-});
-
-/* ---------- 关键词搜索 ---------- */
-function clearKw(){
-  document.querySelectorAll("mark.srch-hit").forEach(mk=>{
-    const p=mk.parentNode;mk.replaceWith(document.createTextNode(mk.textContent));p.normalize();});
-  state.kwHits=[];state.kwIdx=-1;
-}
-function doSearch(){
-  clearKw();
-  const kw=$("#kw").value.trim();
-  if(!kw)return;
-  const walker=document.createTreeWalker($("#contractRoot"),NodeFilter.SHOW_TEXT);
-  const nodes=[];let n;
-  while((n=walker.nextNode()))nodes.push(n);
-  for(const node of nodes){
-    const text=node.nodeValue;let idx=text.indexOf(kw);
-    if(idx<0)continue;
-    const frag=document.createDocumentFragment();let last=0;
-    while(idx>=0){
-      frag.appendChild(document.createTextNode(text.slice(last,idx)));
-      const mk=document.createElement("mark");mk.className="srch-hit";
-      mk.textContent=text.slice(idx,idx+kw.length);
-      frag.appendChild(mk);
-      last=idx+kw.length;idx=text.indexOf(kw,last);
-    }
-    frag.appendChild(document.createTextNode(text.slice(last)));
-    node.parentNode.replaceChild(frag,node);
-  }
-  state.kwHits=[...document.querySelectorAll("mark.srch-hit")];
-  state.kwIdx=-1;
-  if(state.kwHits.length)nextHit();
-  updateStats();
-}
-function nextHit(){
-  if(!state.kwHits.length)return;
-  state.kwIdx=(state.kwIdx+1)%state.kwHits.length;gotoHit();}
-function prevHit(){
-  if(!state.kwHits.length)return;
-  state.kwIdx=(state.kwIdx-1+state.kwHits.length)%state.kwHits.length;gotoHit();}
-function gotoHit(){
-  const h=state.kwHits[state.kwIdx];
-  h.scrollIntoView({behavior:"smooth",block:"center"});updateStats();}
-function updateStats(){
-  const el=$("#stats");
-  const list=DATA.risks.filter(r=>state.sev.has(r.severity)&&state.cat.has(r.category));
-  let t=`显示 ${list.length} / ${DATA.risks.length} 条风险`;
-  if($("#kw").value.trim())t+=` ｜ 关键词命中 ${state.kwHits.length} 处`+
-    (state.kwHits.length?`（第 ${state.kwIdx+1} 处）`:"");
-  el.textContent=t;}
-
-/* ---------- 初始化 ---------- */
 function initMeta(){
-  const m=DATA.meta;
-  $("#metaLine").innerHTML=
-    `合同文件：${esc(m.source_name)} ｜ 合同类型：${esc(m.contract_type||"未识别")} ｜ `+
-    `审查时间：${esc(m.reviewed_at)} ｜ 解析状态：${esc(m.parse_status)}<br>`+
-    `审查依据：${esc((m.law_scope||[]).map(l=>l.law_name+"（"+l.version+"）").join("；"))}<br>`+
-    `风险统计：${["high","medium","low","review_required"].map(s=>
-      `${SEV_LABEL[s]} ${DATA.risks.filter(r=>r.severity===s).length}`).join(" ｜ ")}`+
-    (m.scope_limitation?`<br>审查局限：${esc(m.scope_limitation)}`:"");
+ const m=DATA.meta||{};$('#sourceName').textContent=m.source_name||'合同审查报告';$('#riskCount').textContent=risks.length+' 项';
+ const perspectiveText={neutral:'中立审查',party_a:'甲方视角',party_b:'乙方视角',custom:'自定义视角'}[m.perspective?.mode||'neutral']||'中立审查';
+ $('#summaryBrief').textContent=perspectiveText+' · '+risks.length+' 项风险提示';
+ if(!m.template_demo){$('#demoLabel').textContent=perspectiveText+' · 法律合规与条款完整性'}
+ $('.risk-footer').textContent=perspectiveText+' · 法律要求独立于立场 · 建议条款需结合事实确认';
+ const laws=Array.isArray(m.law_scope)?m.law_scope:[];
+ const alerts=Array.isArray(m.alerts)?m.alerts:[];
+ $('#metaContent').innerHTML='<div><strong>合同类型</strong>'+esc(m.contract_type||'未提供')+'</div><div><strong>审查时间 / 解析状态</strong>'+esc(m.reviewed_at||'未提供')+' / '+esc(m.parse_status||'未提供')+'</div><div class="meta-wide"><strong>审查法律范围</strong>'+laws.map(l=>esc(l.law_name)+'（'+esc(l.version)+'）').join('；')+'</div>'+(alerts.length?'<div class="meta-wide"><strong>审查提示</strong><ul style="margin:4px 0 0;padding-left:18px;line-height:1.8">'+alerts.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul></div>':'')+'<div class="meta-wide scope-note">'+esc(m.scope_limitation||'范围说明尚未提供。')+(m.template_demo?'<br><strong>界面演示：风险与建议沿用上传报告，未在本模板中重新审查或核验。</strong>':'')+'</div>';
+ Array.from(new Set(risks.map(r=>r.category).filter(Boolean))).forEach(c=>{const option=document.createElement('option');option.value=c;option.textContent=c;$('#categoryFilter').append(option)});
 }
-$("#kw").addEventListener("keydown",e=>{if(e.key==="Enter"){e.shiftKey?prevHit():nextHitOrSearch();}});
-function nextHitOrSearch(){if(state.kwHits.length)nextHit();else doSearch();}
-$("#kw").addEventListener("input",()=>{if(!$("#kw").value.trim()){clearKw();updateStats();}});
-$("#kwNext").addEventListener("click",()=>nextHitOrSearch());
-$("#kwPrev").addEventListener("click",prevHit);
-$("#kwClear").addEventListener("click",()=>{$("#kw").value="";clearKw();updateStats();});
-$("#btnPrint").addEventListener("click",()=>window.print());
-$("#btnExpand").addEventListener("click",e=>{
-  const cards=document.querySelectorAll(".card");
-  const anyClosed=[...cards].some(c=>!c.classList.contains("open"));
-  cards.forEach(c=>c.classList.toggle("open",anyClosed));
-  e.target.textContent=anyClosed?"全部收起":"全部展开";});
+$('#severityFilters').addEventListener('click',e=>{const b=e.target.closest('[data-severity]');if(!b)return;state.severity=b.dataset.severity;buildFilters();renderCards()});
+$('#categoryFilter').addEventListener('change',e=>{state.category=e.target.value;renderCards()});
+$('#riskSearch').addEventListener('input',e=>{state.query=e.target.value.trim();renderCards()});
+$('#resetFilters').addEventListener('click',()=>{state.severity='';state.category='';state.query='';$('#categoryFilter').value='';$('#riskSearch').value='';buildFilters();renderCards()});
+$('#collapseAll').addEventListener('click',()=>{document.querySelectorAll('.card[open]').forEach(c=>c.open=false);clearLocation();state.selected=null;$('#locStatus').textContent='选择右侧风险，即可定位原文'});
+$('#riskList').addEventListener('click',async e=>{
+ const jump=e.target.closest('[data-show-clause]');if(jump){const target=jump.closest('.card').querySelector('.clause');target.scrollIntoView({behavior:'smooth',block:'start'});target.focus({preventScroll:true});return}
+
+ const copy=e.target.closest('[data-copy]');if(copy){const r=risks.find(r=>r.risk_id===copy.dataset.copy);if(!r?.proposed_clause)return;try{await navigator.clipboard.writeText(r.proposed_clause);toast('条款已复制')}catch{const body=copy.closest('.clause').querySelector('.body');const range=document.createRange();range.selectNodeContents(body);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);toast('已选中条款，请按 Ctrl+C / Command+C 复制')}return}
+ const b=e.target.closest('[data-evidence]');if(b){const r=risks.find(r=>r.risk_id===b.dataset.risk);if(r)locate(r,Number(b.dataset.evidence))}
+});
+function openRiskFromMark(mark){
+ const refs=Array.from(mark.classList).filter(c=>c.startsWith('m-')).map(c=>{const match=/^m-(.+)-(\d+)$/.exec(c);return match?{id:match[1],i:Number(match[2])}:null}).filter(Boolean);
+ const ref=refs.find(x=>x.id===state.selected)||refs[0];if(!ref)return;
+ const r=risks.find(x=>x.risk_id===ref.id);if(!r)return;
+ if(!document.getElementById('card-'+r.risk_id)){state.severity='';state.category='';state.query='';$('#riskSearch').value='';$('#categoryFilter').value='';buildFilters();renderCards()}
+ const card=document.getElementById('card-'+r.risk_id);card.open=true;const j=(r.evidence||[]).findIndex((x,k)=>evidenceIndex(x,k)===ref.i);locate(r,Math.max(0,j));card.scrollIntoView({behavior:'smooth',block:'nearest'});
+ if(refs.length>1)toast('此处关联 '+refs.length+' 项风险；可在右侧切换查看');
+}
+$('#contractRoot').addEventListener('click',e=>{const mark=e.target.closest('.mk');if(mark)openRiskFromMark(mark)});
+$('#contractRoot').addEventListener('keydown',e=>{if(e.target.matches('.mk')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openRiskFromMark(e.target)}});
+$('#contractRoot').querySelectorAll('.mk').forEach(m=>{m.tabIndex=0;m.setAttribute('role','button');m.setAttribute('aria-label','查看此处关联的合同风险')});
+function clearSearch(){document.querySelectorAll('mark.search-hit').forEach(m=>{m.replaceWith(document.createTextNode(m.textContent))});$('#contractRoot').normalize();state.hits=[];state.hit=-1}
+function searchDoc(){
+ clearSearch();const query=$('#docSearch').value.trim();if(!query){$('#docSearchCount').textContent='';$('#prevHit').disabled=$('#nextHit').disabled=true;return}
+ const walker=document.createTreeWalker($('#contractRoot'),NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement.closest('.blkno')?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
+ const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+ nodes.forEach(node=>{const text=node.textContent;let start=0,index;const lower=text.toLocaleLowerCase(),needle=query.toLocaleLowerCase();if(!lower.includes(needle))return;const fragment=document.createDocumentFragment();while((index=lower.indexOf(needle,start))!==-1){fragment.append(document.createTextNode(text.slice(start,index)));const mark=document.createElement('mark');mark.className='search-hit';mark.textContent=text.slice(index,index+query.length);fragment.append(mark);state.hits.push(mark);start=index+query.length}fragment.append(document.createTextNode(text.slice(start)));node.replaceWith(fragment)});
+ $('#prevHit').disabled=$('#nextHit').disabled=!state.hits.length;if(state.hits.length)jumpHit(1);else $('#docSearchCount').textContent='0 处';
+}
+function jumpHit(step){if(!state.hits.length)return;state.hits.forEach(m=>m.classList.remove('search-current'));state.hit=(state.hit+step+state.hits.length)%state.hits.length;const m=state.hits[state.hit];m.classList.add('search-current');m.scrollIntoView({behavior:'smooth',block:'center'});$('#docSearchCount').textContent=(state.hit+1)+' / '+state.hits.length}
+$('#docSearch').addEventListener('input',()=>{clearTimeout(docSearchTimer);docSearchTimer=setTimeout(searchDoc,180)});
+$('#docSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(state.hits.length)jumpHit(e.shiftKey?-1:1);else searchDoc()}});
+$('#prevHit').addEventListener('click',()=>jumpHit(-1));$('#nextHit').addEventListener('click',()=>jumpHit(1));$('#prevHit').disabled=$('#nextHit').disabled=true;
+$('#focusBtn').addEventListener('click',()=>{const on=$('#app').classList.toggle('focus-mode');$('#focusBtn').setAttribute('aria-pressed',on);$('#focusBtn').textContent=on?'返回审查':'专注原文'});
 initMeta();buildFilters();renderCards();
+$('#contractRoot').querySelectorAll('.blk').forEach(b=>{const t=Array.from(b.childNodes).filter(n=>!(n.nodeType===1&&n.classList.contains('blkno'))).map(n=>n.textContent).join('').trim();if(/^[一二三四五六七八九十]+、[^。]{0,25}$/.test(t))b.classList.add('blk-heading');});
 </script>
+<script>__EDITOR_JS__</script>
 </body>
 </html>

@@ -101,7 +101,7 @@ def render_block(block, base, splitter):
                 coff += len(cell) + (3 if c < len(cells) - 1 else 0)
             rows_html.append("<tr>" + "".join(cells_html) + "</tr>")
             off += len(row) + 1
-        return f'{no}<table class="blk blk-table">{"".join(rows_html)}</table>'
+        return f'<table class="blk blk-table" data-bid="{esc(bid)}">{"".join(rows_html)}</table>'
     cls = "blk blk-heading" if kind == "heading" else "blk"
     inner = render_text_with_marks(text, base, splitter)
     return f'<div class="{cls}" data-bid="{esc(bid)}">{no}{inner}</div>'
@@ -120,28 +120,33 @@ def render_contract(contract, spans_all):
     return "".join(blocks_html)
 
 
-def render_print_summary(review):
-    rows = []
-    for r in review["risks"]:
-        basis = "；".join(
-            f"{b['law_name']}{b['article_no']}[{b['status']}]" for b in r["legal_basis"]
-        ) or "—"
-        rows.append(
-            f"<tr><td>{esc(r['risk_id'])}</td><td>{esc(SEV_LABEL.get(r['severity'], r['severity']))}</td>"
-            f"<td>{esc(r['category'])}</td><td>{esc(r['title'])}</td>"
-            f"<td>{esc(r['conclusion'])}</td><td>{esc(basis)}</td>"
-            f"<td>{esc(r['recommendation'])}</td></tr>"
-        )
-    return (
-        "<h2>风险清单（打印版）</h2>"
-        "<table><tr><th>编号</th><th>等级</th><th>类型</th><th>风险</th><th>判断</th>"
-        "<th>法律依据</th><th>建议</th></tr>" + "".join(rows) + "</table>"
-    )
+def build_alerts(cinfo, meta, contract, render_issues):
+    """构造 meta.alerts：解析状态 / 知识库 / 校验统计提示 + 免责声明（纯文本，前端负责转义）。"""
+    alerts = []
+    ps = cinfo.get("parse_status", "")
+    if ps == "partial":
+        notes = "；".join(contract.get("parse_notes", []))
+        alerts.append("⚠ 文件解析不完整：" + (notes or "部分内容未提取") +
+                      "。本报告仅覆盖已成功提取的文本，未提取部分（如扫描页）可能包含未审查的风险。")
+    elif ps == "failed":
+        alerts.append("✘ 文件解析失败，本报告不包含有效审查内容。请检查文件或转换格式后重试。")
+    for note in meta.get("kb_notes", []):
+        alerts.append("⚠ 法律知识库问题：" + note + "。在知识库完整之前，不得声称已完成全面法律审查。")
+    stats = meta.get("stats", {})
+    if stats.get("basis_not_found") or stats.get("basis_mismatch"):
+        alerts.append("⚠ 有 {} 条引用法条不存在、{} 条引用条文与知识库不一致，已在对应风险卡片中标注，"
+                      "相关结论不得直接采信。".format(stats.get("basis_not_found", 0), stats.get("basis_mismatch", 0)))
+    if render_issues:
+        alerts.append("⚠ {} 条证据在渲染前二次校验中定位失败，已降级显示为“未能定位”，不会高亮到错误文字。".format(len(render_issues)))
+    alerts.append("本报告由 AI 辅助生成，属于风险提示与核查线索，不构成法律意见。"
+                  "涉及合同效力认定、签署或争议处理，请咨询执业律师并以人工核实为准。")
+    return alerts
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--task-dir", required=True)
+    ap.add_argument('--revisions',help='Optional revisions.json to embed and restore existing edits')
     args = ap.parse_args()
     task_dir = Path(args.task_dir)
 
@@ -161,6 +166,11 @@ def main():
             ev["i"] = i
             ev["has_span"] = False
             ev["pos_desc"] = ""
+            if ev.get("no_text"):
+                # 缺失条款：不高亮任何原文文字（需求 §3/§6），只保留建议插入位置
+                ev["pos_desc"] = ev.get("note") or "该问题无直接原文"
+                ev["block_id"] = ev.get("resolved_block_id", "")
+                continue
             if ev.get("span"):
                 s, e = ev["span"]
                 actual = full[s:e]
@@ -179,13 +189,6 @@ def main():
                     ev["note"] = ("渲染校验失败：span 与原文不一致，已降级为定位失败"
                                   + (f"（原 note: {ev.get('note','')}）" if ev.get("note") else ""))
                     render_issues.append(f"{r['risk_id']} 证据{i+1} span 校验失败")
-            if ev.get("no_text"):
-                ev["pos_desc"] = ev.get("note") or "该问题无直接原文"
-                if ev.get("span"):
-                    s, e = ev["span"]
-                    if 0 <= s < e <= len(full):
-                        ev["has_span"] = True
-                        spans_all.append((s, e, r["risk_id"], i, r["severity"]))
 
     # ---- DATA（供 JS 使用；不含合同原文，原文已在 DOM） ----
     data_risks = []
@@ -201,10 +204,14 @@ def main():
             "manual_checks": r.get("manual_checks", []),
             "scope_note": r.get("scope_note", ""),
             "verification_status": r.get("verification_status", {}),
+            "risk_source":r.get('risk_source','legal'),
+            "preference_id":r.get('preference_id',''),
+            "edit":r.get('edit'),
             "evidence": [{
                 "i": ev["i"], "quote": ev.get("quote", ""), "has_span": ev["has_span"],
                 "no_text": ev.get("no_text", False), "pos_desc": ev.get("pos_desc", ""),
                 "note": ev.get("note", ""), "block_id": ev.get("block_id", ""),
+                "span":ev.get('span'),
             } for ev in r["evidence"]],
             "legal_basis": [{
                 "law_id": b.get("law_id", ""), "law_name": b.get("law_name", b.get("law_id", "")),
@@ -225,40 +232,32 @@ def main():
             "law_scope": meta.get("law_scope", []),
             "scope_limitation": meta.get("scope_limitation", ""),
             "categories_used": cats_used,
+            "alerts": build_alerts(cinfo, meta, contract, render_issues),
+            "template_demo": False,  # 真实审查输出恒为 false
+            "perspective":meta.get('perspective',{'mode':'neutral','focus':''}),
+            "review_id":meta.get('review_id',''),
         },
         "risks": data_risks,
     }
-
-    # ---- banners ----
-    banners = []
-    ps = cinfo.get("parse_status", "")
-    if ps == "partial":
-        notes = "；".join(contract.get("parse_notes", []))
-        banners.append(f'<div class="banner warn">⚠ 文件解析不完整：{esc(notes)}。'
-                       f'本报告仅覆盖已成功提取的文本，未提取部分（如扫描页）可能包含未审查的风险。</div>')
-    elif ps == "failed":
-        banners.append('<div class="banner err">✘ 文件解析失败，本报告不包含有效审查内容。请检查文件或转换格式后重试。</div>')
-    for note in meta.get("kb_notes", []):
-        banners.append(f'<div class="banner err">⚠ 法律知识库问题：{esc(note)}。'
-                       f'在知识库完整之前，不得声称已完成全面法律审查。</div>')
-    stats = meta.get("stats", {})
-    if stats.get("basis_not_found") or stats.get("basis_mismatch"):
-        banners.append(f'<div class="banner warn">⚠ 有 {stats.get("basis_not_found",0)} 条引用法条不存在、'
-                       f'{stats.get("basis_mismatch",0)} 条引用条文与知识库不一致，已在对应风险卡片中标红，'
-                       f'相关结论不得直接采信。</div>')
-    if render_issues:
-        banners.append(f'<div class="banner warn">⚠ {len(render_issues)} 条证据在渲染前二次校验中定位失败，'
-                       f'已降级显示为“未能定位”，不会高亮到错误文字。</div>')
-    banners.append('<div class="banner info">本报告由 AI 辅助生成，属于风险提示与核查线索，不构成法律意见。'
-                   '涉及合同效力认定、签署或争议处理，请咨询执业律师并以人工核实为准。</div>')
+    from revision_core import document_for,nodes_for,replay
+    base_contract=read_json(task_dir/'base_contract.json') if (task_dir/'base_contract.json').exists() else contract
+    document=document_for(base_contract)
+    revision_path=Path(args.revisions) if args.revisions else task_dir/'revisions.json'
+    revisions=read_json(revision_path) if revision_path.exists() else None
+    if revisions:
+        replay(document,revisions)
+    context=read_json(task_dir/'review_context.json') if (task_dir/'review_context.json').exists() else {}
+    current_nodes=nodes_for(contract)
+    data['editor']={'document':document,'review_nodes':None if current_nodes==document['original_nodes'] else current_nodes,
+                    'revision':revisions,'context':context}
 
     title = contract.get("title_guess") or f"合同审查报告 — {cinfo.get('source_name','')}"
-    html = (template
-            .replace("__TITLE__", esc(title))
-            .replace("__BANNERS_HTML__", "".join(banners))
-            .replace("__CONTRACT_HTML__", render_contract(contract, spans_all))
-            .replace("__PRINT_SUMMARY_HTML__", render_print_summary(review))
-            .replace("__DATA_JSON__", json_for_script(data)))
+    # One-pass substitution: user text containing a placeholder must remain literal.
+    import re
+    replacements={'__TITLE__':esc(title),'__CONTRACT_HTML__':render_contract(contract,spans_all),
+                  '__DATA_JSON__':json_for_script(data),
+                  '__EDITOR_JS__':(tpl_path.parent/'editor.js').read_text(encoding='utf-8')}
+    html=re.sub(r'__TITLE__|__CONTRACT_HTML__|__DATA_JSON__|__EDITOR_JS__',lambda m:replacements[m.group(0)],template)
 
     out = task_dir / "contract_review.html"
     out.write_text(html, encoding="utf-8")
