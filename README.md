@@ -10,6 +10,8 @@
 
 打开 HTML 后可编辑常见段落/单元格、应用建议、插入条款、撤销恢复、查看修订或清洁稿。必须主动保存并妥善保管 revisions.json；下载发起不等于保存成功。再次打开用导入恢复，或临时恢复后重新保存。
 
+V2.1 支持继续编辑含普通 Word 插入/删除修订的段落，生成新 Word 时保留旧历史并追加原生修订，无需先接受旧修订。图片、字段、移动修订、段落合并等未支持结构显示具体限制原因。既有格式修订保留，网页只修改文字；修订模式展示本轮修改，完整旧修订仍在 Word 中。
+
 视角切换与修改后复审需要返回 WorkBuddy 真实重新分析；HTML 提供请求指令。最终 DOCX 由 WorkBuddy 读取原始合同与已确认修订生成新文件；浏览器没有 Word 导出或打印功能。
 
 ## 公开访问与其他 agent
@@ -30,6 +32,7 @@ Windows PowerShell 示例：
 ```powershell
 $env:CONTRACT_REVIEW_TEST_DIR = Join-Path $env:TEMP 'contract-review-v2-tests'
 python -B -X utf8 tests/test_v2.py
+python -B -X utf8 tests/test_tracked.py
 # 在已安装 Playwright 的开发环境执行，不需要 @playwright/test
 node tests/browser_v2.cjs
 ```

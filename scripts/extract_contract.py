@@ -35,16 +35,43 @@ force_utf8_stdio()
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
+def paragraph_features(element):
+    labels = {'drawing':'图片或绘图','object':'嵌入对象','fldChar':'Word字段','instrText':'Word字段',
+              'fldSimple':'Word字段','tab':'制表符','br':'段内换行','cr':'段内换行','sdt':'内容控件',
+              'moveFrom':'移动修订','moveTo':'移动修订','moveFromRangeStart':'移动修订',
+              'moveToRangeStart':'移动修订'}
+    reasons = sorted({labels[node.tag.split('}')[-1]] for node in element.iter()
+                      if node.tag.split('}')[-1] in labels})
+    if element.find(f'{W}pPr/{W}rPr/{W}del') is not None:
+        reasons.append('段落结束符删除修订（涉及段落合并）')
+    # Only plain text runs can be split without detaching non-text run content.
+    for run in element.iter(W+'r'):
+        if run.find(W+'t') is not None and any(c.tag not in {W+'rPr',W+'t'} for c in run):
+            reasons.append('文字与非文字对象位于同一Word片段')
+    allowed={'p','pPr','r','rPr','t','delText','ins','del','hyperlink','proofErr',
+             'bookmarkStart','bookmarkEnd','commentRangeStart','commentRangeEnd',
+             'commentReference','permStart','permEnd','footnoteReference','endnoteReference'}
+    def inspect(node):
+        local=node.tag.split('}')[-1]
+        if local in {'pPr','rPr'}:return
+        if not node.tag.startswith(W) or local not in allowed:
+            reasons.append('暂未支持的Word结构：'+local)
+        for child in node:inspect(child)
+    inspect(element)
+    return {'editable':not reasons,'read_only_reason':'、'.join(sorted(set(reasons))),
+            'has_existing_revisions':any(n.tag in {W+'ins',W+'del',W+'rPrChange',W+'pPrChange'} for n in element.iter())}
+
 def editable_paragraph(element):
-    unsupported = {'drawing','object','fldChar','instrText','del','ins','tab','br','cr','sdt'}
-    return not any(node.tag.split('}')[-1] in unsupported for node in element.iter())
+    return paragraph_features(element)['editable']
 
 
 # ---------------------------------------------------------------- DOCX
 
 def _docx_paragraph_text(p_el) -> str:
     texts = []
-    for node in p_el.iter():
+    def visible(node):
+        if node.tag in {W+'del',W+'moveFrom'}:
+            return
         tag = node.tag
         if tag == f"{W}t":
             texts.append(node.text or "")
@@ -52,6 +79,9 @@ def _docx_paragraph_text(p_el) -> str:
             texts.append("\t")
         elif tag in (f"{W}br", f"{W}cr"):
             texts.append("\n")
+        for child in node:
+            visible(child)
+    visible(p_el)
     return "".join(texts)
 
 
@@ -85,7 +115,7 @@ def extract_docx(path: Path):
                                      or style.startswith("标题")
                                      or style in ("Title", "Subtitle")) else "para"
                 blocks.append({"kind": kind, "text": txt, "style": style,
-                               "editable": editable_paragraph(el),
+                               **paragraph_features(el),
                                "locator": {"body_index":body_index,"kind":"paragraph"}})
             elif el.tag == f"{W}tbl":
                 rows_txt, structured = [], []
@@ -102,7 +132,9 @@ def extract_docx(path: Path):
                                 _docx_paragraph_text(paragraphs[0])==cell and
                                 not tc.findall(f'.//{W}gridSpan') and not tc.findall(f'.//{W}vMerge') and
                                 not tc.findall(f'.//{W}tbl'))
-                        structured_row.append({'text':cell,'editable':safe,
+                        features=paragraph_features(paragraphs[0]) if len(paragraphs)==1 else {}
+                        structured_row.append({'text':cell,**features,'editable':safe,
+                                               'read_only_reason':features.get('read_only_reason') or ('' if safe else '合并、嵌套、多段落或空白不匹配的单元格'),
                                                'locator':{'body_index':body_index,'row':row_index,'col':col_index,'kind':'cell'}})
                     rows_txt.append(" | ".join(cells))
                     structured.append(structured_row)
@@ -253,7 +285,7 @@ def main():
             "text": txt,
             **({"style": b["style"]} if b.get("style") else {}),
             **({"page": b["page"]} if b.get("page") else {}),
-            **{k:b[k] for k in ('cells','locator','editable') if k in b},
+            **{k:b[k] for k in ('cells','locator','editable','read_only_reason','has_existing_revisions') if k in b},
         })
     blocks = cleaned
 

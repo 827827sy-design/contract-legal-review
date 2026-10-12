@@ -22,14 +22,18 @@ def nodes_for(contract):
                     nodes.append({'node_id': f'{bid}-r{ri}-c{ci}', 'block_id': bid,
                                   'kind': 'cell', 'row': ri, 'col': ci, 'text': text,
                                   'block_start': cursor, 'editable': cell.get('editable', False),
-                                  'locator': cell.get('locator')})
+                                  'locator': cell.get('locator'),
+                                  'read_only_reason':cell.get('read_only_reason',''),
+                                  'has_existing_revisions':cell.get('has_existing_revisions',False)})
                     cursor += len(text) + (3 if ci < len(row)-1 else 0)
                 cursor += 1 if ri < len(block['cells'])-1 else 0
         else:
             nodes.append({'node_id': bid, 'block_id': bid, 'kind': 'readonly' if block['kind']=='table' else 'paragraph',
                           'text': block['text'], 'block_start': 0,
                           'editable': block.get('editable', block['kind'] != 'table'),
-                          'locator': block.get('locator')})
+                          'locator': block.get('locator'),
+                          'read_only_reason':block.get('read_only_reason',''),
+                          'has_existing_revisions':block.get('has_existing_revisions',False)})
     _, offsets = build_full_text(contract['blocks'])
     for node in nodes:
         node['full_start'] = offsets[node['block_id']][0] + node.get('block_start', 0)

@@ -120,3 +120,12 @@ WorkBuddy 根据 SKILL.md 执行本地工具，模型负责语义理解、法律
 - 法律语料固定在原有三法版本，这次没有另行检索或验证后续法律变化；原来的审查范围和人工核实要求继续适用。
 
 无需浏览器 Word 转换器、打印功能或在线前端依赖。交付包包含可恢复的原目录备份及完整 V2 skill。
+
+
+## V2.1 follow-up: edit text with existing Word revisions
+
+Plain insertion/deletion text revisions are editable. Word export retains existing revision metadata, deletion history, formatting revision records and comment anchors, and adds new native revisions without accepting or rejecting prior changes. Use `--track-changes` to track edits in ordinary paragraphs too. Existing formatting histories remain on one original run fragment rather than being duplicated across split runs.
+
+The parser excludes deleted ancestors from the current text. It reports concrete reasons for unsupported fields, drawings, moves and paragraph-break deletions. Upgrade existing reports by reparsing the original DOCX in a fresh task; do not change editable flags by hand. The HTML shows current-session revisions; prior Word history remains in Word.
+
+Validation: 11 backend regression cases, 7 tracked-text cases and 50 browser regression checks passed. Word structural checks verify current text, old revision attributes, deletion history, comment anchors, non-document ZIP parts and original-file immutability. Final native Word UI and page-layout verification are still required in an environment with a suitable renderer; structural checks do not substitute for rendering.

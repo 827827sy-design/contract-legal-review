@@ -9,6 +9,7 @@ from pathlib import Path
 from common import read_json, file_sha256, force_utf8_stdio
 from revision_core import document_for,replay
 from extract_contract import W,_docx_paragraph_text
+from docx_tracked import Tracker,replace_tracked
 
 def replace_text(paragraph,before,after):
     if _docx_paragraph_text(paragraph)!=before:
@@ -39,6 +40,8 @@ def main():
     force_utf8_stdio();ap=argparse.ArgumentParser()
     ap.add_argument('--original',required=True);ap.add_argument('--task-dir',required=True)
     ap.add_argument('--revisions',required=True);ap.add_argument('--output',required=True)
+    ap.add_argument('--track-changes',action='store_true',help='普通段落的修改也以Word原生修订记录；已有修订的修改始终追加修订')
+    ap.add_argument('--author',default='Contract Review',help='新增Word修订的作者名')
     args=ap.parse_args();src=Path(args.original);out=Path(args.output);task=Path(args.task_dir)
     if out.resolve()==src.resolve() or out.exists():raise ValueError('输出必须是新的文件，禁止覆盖原始合同或已有 Word。')
     contract=read_json(task/('base_contract.json' if (task/'base_contract.json').exists() else 'contract.json'))
@@ -52,12 +55,14 @@ def main():
             namespaces[prefix]=uri
             if not prefix.startswith('ns'):ET.register_namespace(prefix,uri)
         root=ET.fromstring(original_xml);body=root.find(W+'body');original_elements=list(body)
+        tracker=Tracker(root,args.author)
         anchors={};last_body_element=None
         for node in nodes:
             if node.get('inserted'):
                 anchor=last_body_element if node['anchor_node_id'] in anchors else None
                 if anchor is None:raise ValueError('新增条款 Word 锚点不可用。')
-                p=ET.Element(W+'p');run=ET.SubElement(p,W+'r');t=ET.SubElement(run,W+'t');t.text=node['text']
+                p=ET.Element(W+'p');run=ET.Element(W+'r');t=ET.SubElement(run,W+'t');t.text=node['text'];t.set('{http://www.w3.org/XML/1998/namespace}space','preserve')
+                p.append(tracker.wrap('ins',run) if args.track_changes else run)
                 if '\n' in node['text'] or '\t' in node['text']:raise ValueError('新增条款须为单段文本。')
                 body.insert(list(body).index(anchor)+1,p);anchors[node['node_id']]=p;last_body_element=p;continue
             loc=node.get('locator')
@@ -66,7 +71,11 @@ def main():
                 continue
             element=original_elements[loc['body_index']];anchors[node['node_id']]=element;last_body_element=element
             paragraph=element if loc['kind']=='paragraph' else element.findall(W+'tr')[loc['row']].findall(W+'tc')[loc['col']].find(W+'p')
-            if node['changed']:replace_text(paragraph,revision['base_nodes'][node['node_id']],node['text'])
+            if node['changed']:
+                has_revisions=any(n.tag in {W+'ins',W+'del',W+'rPrChange',W+'pPrChange'} for n in paragraph.iter())
+                if has_revisions or args.track_changes:
+                    replace_tracked(paragraph,revision['base_nodes'][node['node_id']],node['text'],tracker)
+                else:replace_text(paragraph,revision['base_nodes'][node['node_id']],node['text'])
         payload=ET.tostring(root,encoding='utf-8',xml_declaration=True)
         # ET omits unused namespace declarations referenced by mc:Ignorable.
         ignorable=root.get('{http://schemas.openxmlformats.org/markup-compatibility/2006}Ignorable','').split()
@@ -78,6 +87,6 @@ def main():
         with zipfile.ZipFile(out,'x',zipfile.ZIP_DEFLATED) as target:
             for info in archive.infolist():target.writestr(info,payload if info.filename=='word/document.xml' else archive.read(info.filename))
     # Verify actual output text before reporting success; source is never written.
-    print(f'已生成新文件：{out}。常见段落/表格文字已应用；不包含 Word 原生修订记录。')
+    print(f'已生成新文件：{out}。新增Word修订标记 {len(tracker.ids)} 个；原有修订与批注保留，未接受或拒绝。')
 
 if __name__=='__main__':main()

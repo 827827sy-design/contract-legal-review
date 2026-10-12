@@ -108,14 +108,18 @@ function textMarkup(n){
  if(old===now||$('#displayMode').value==='clean')return currentMarkup(n,0,cp(now).length);
  let offset=0;return diffSegments(old,now).map(part=>{if(part.type==='delete')return '<del class="revision-deleted" aria-label="删除文字">'+esc(part.text)+'</del>';const length=cp(part.text).length,html=currentMarkup(n,offset,offset+length);offset+=length;return part.type==='insert'?'<ins class="revision-added" aria-label="新增文字">'+html+'</ins>':html;}).join('');
 }
+function nodeNotice(n){
+ if(!n.editable)return '<small class="readonly-note">暂不能编辑：'+esc(n.read_only_reason||'复杂Word结构')+'</small>';
+ return n.has_existing_revisions?'<small class="revision-note">含原有 Word 修订，可继续编辑；导出时保留旧记录并追加修改。</small>':'';
+}
 function renderDocument(){
  clearSearch();const groups=new Map();current.forEach(n=>{if(!groups.has(n.block_id))groups.set(n.block_id,[]);groups.get(n.block_id).push(n)});
  let html='';
  for(const [bid,nodes] of groups){
   if(nodes[0].kind==='cell'){
    const rows=new Map();for(const n of nodes){if(!rows.has(n.row))rows.set(n.row,[]);rows.get(n.row).push(n)}
-   html+='<table class="blk blk-table" data-bid="'+esc(bid)+'"><tbody>'+[...rows].map(([row,cells])=>'<tr>'+cells.map(n=>'<td data-node="'+esc(n.node_id)+'" tabindex="0" class="editable-node'+(nodeChanged(n)?' changed-node':'')+'">'+textMarkup(n)+(n.editable?'':'<small class="readonly-note">复杂单元格只读</small>')+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
-  }else {const n=nodes[0];html+='<div class="blk editable-node'+(nodeChanged(n)?' changed-node':'')+'" data-node="'+esc(n.node_id)+'" data-bid="'+esc(bid)+'" tabindex="0">'+textMarkup(n)+(nodeChanged(n)?'<small class="stale-note">已修改，原审查需重新核实</small>':'')+(n.editable?'':'<small class="readonly-note">复杂结构只读</small>')+'</div>';}
+   html+='<table class="blk blk-table" data-bid="'+esc(bid)+'"><tbody>'+[...rows].map(([row,cells])=>'<tr>'+cells.map(n=>'<td data-node="'+esc(n.node_id)+'" tabindex="0" class="editable-node'+(nodeChanged(n)?' changed-node':'')+'">'+textMarkup(n)+nodeNotice(n)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+  }else {const n=nodes[0];html+='<div class="blk editable-node'+(nodeChanged(n)?' changed-node':'')+'" data-node="'+esc(n.node_id)+'" data-bid="'+esc(bid)+'" tabindex="0">'+textMarkup(n)+(nodeChanged(n)?'<small class="stale-note">已修改，原审查需重新核实</small>':'')+nodeNotice(n)+'</div>';}
  }
  $('#contractRoot').innerHTML=html+'<div id="contractEnd" class="blk" aria-label="合同末尾"></div>';
  $('#targetNode').innerHTML=current.map(n=>'<option value="'+esc(n.node_id)+'">'+esc(n.node_id+' · '+n.text.slice(0,30))+'</option>').join('');
@@ -142,7 +146,7 @@ function commitOperation(op){
 }
 function openManual(nodeId){
  const node=current.find(n=>n.node_id===nodeId);if(!node)return;
- selectedNode=nodeId;if(!node.editable){editDraft=null;$('#editPanel').hidden=true;status('此节点含复杂结构，已限制编辑。请交给 WorkBuddy 处理。',true);return;}
+ selectedNode=nodeId;if(!node.editable){editDraft=null;$('#editPanel').hidden=true;status('此段暂不能直接编辑：'+(node.read_only_reason||'复杂Word结构')+'。请返回聊天处理该结构。',true);return;}
  editDraft={node_id:nodeId,before_text:node.text,source:'manual',mode:'replace'};
  $('#editPanel').hidden=false;$('#targetNode').value=nodeId;$('#editMode').value='replace';$('#editText').value=node.text;$('#editBefore').textContent=node.text;$('#editReason').value='人工编辑';$('#editText').focus();
 }
@@ -220,7 +224,7 @@ function handoff(kind){
  if(kind==='perspective'){model.perspective={...model.perspective,mode,focus};event('perspective_request',{mode,focus});persist();updateStatus();}
  const originalFile=doc.source_file||doc.source_name;
  let text;
- if(kind==='word')text='请读取原始 DOCX '+JSON.stringify(originalFile)+' 及我保存的 revisions.json。先校验合同标识、操作历史和每处原文，只应用已确认的有效修改，生成新的 DOCX，尽可能保留原排版并逐项核验。对于未确认或冲突项先提示我，不要自行决定；不要覆盖原文件。如需 Word 原生修订记录，请由 WorkBuddy 另行处理。';
+ if(kind==='word')text='请读取原始 DOCX '+JSON.stringify(originalFile)+' 及我保存的 revisions.json。先校验合同标识、操作历史和每处原文，只应用已确认的有效修改，生成新的 DOCX，保留原有Word修订与批注，含旧修订的文字段落追加新的原生修订，不接受或拒绝旧记录。尽可能保留原排版并逐项核验。对于未确认或冲突项先提示我，不要自行决定；不要覆盖原文件。如需所有新增修改均带Word原生修订，请使用apply_docx.py的 --track-changes。';
  else if(kind==='perspective')text='请读取原始合同 '+JSON.stringify(originalFile)+'、已有审查任务和保存的 revisions.json，以'+names[mode]+'视角重新分析；重点：'+(focus||'按该视角核查权利义务')+'。先确认真实甲乙方主体。复用解析及已核验法条，客观法律判断不随立场改变；保存修改历史，创建新的审查运行目录，对与现有修改冲突的建议让我选择。浏览器尚未完成重新审查。';
  else text='请读取原始合同 '+JSON.stringify(originalFile)+'、我保存的 revisions.json 和已有审查结果。用 revisions.py 校验并还原当前有效修改稿，在新的任务目录重新审查，明确已解决、仍然存在、新增及待确认风险，保留全部修订与审查历史。未确认修改可以用于复审草稿，但不得自动作为最终 Word。';
  $('#handoffPanel').hidden=false;$('#handoffText').value=text;$('#handoffText').focus();$('#handoffText').select();

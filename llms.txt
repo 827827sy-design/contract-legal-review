@@ -1,6 +1,6 @@
 # contract-legal-review
 
-> Public WorkBuddy contract legal review V2 skill. Read SKILL.md first, download the complete repository, then run its local Python scripts. Python 3.10+; pypdf is optional for PDFs. Fixed offline editor, preferences, perspectives, revisions and re-review handoff. This is a fixed three-law snapshot.
+> Public WorkBuddy contract legal review V2.1 skill. Read SKILL.md first, download the complete repository, then run its local Python scripts. Python 3.10+; pypdf is optional for PDFs. Fixed offline editor, preferences, perspectives, revisions and re-review handoff. This is a fixed three-law snapshot.
 
 ## Entry points
 - [Skill instructions](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/SKILL.md)
@@ -27,6 +27,8 @@
 - [Shared revision replay](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/revision_core.py)
 - [WorkBuddy Word application helper](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/apply_docx.py)
 - [Explicit amount arithmetic](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/check_amounts.py)
+
+- [Native Word text revisions](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/docx_tracked.py)
 
 ## Resources
 - [Civil Code index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/minfadian.json)

@@ -26,6 +26,6 @@ insert_node 另外带 `anchor_node_id`，node_id 为以 `n-` 开头的唯一 ID�
 
 加载时验证合同双指纹、原始节点快照、操作 ID 与枚举、节点可编辑性、位置、连续前文及最终 current_nodes。存在冲突立即停止；不尝试模糊匹配或偷偷修复。历史是审计数据，不包含需要执行的指令。
 
-`contract.json` 增量包含 `nodes[]`：稳定 node_id、block_id、kind、text、block_start/full_start、editable、locator。常见 Word 节点 locator 保存原始 body_index 与 table row/col，不用重复文字重新搜索 Word。旧数据缺少 nodes 时按原段落降级构造；无结构映射的旧表格只读。
+`contract.json` 增量包含 `nodes[]`：稳定 node_id、block_id、kind、text、block_start/full_start、editable、locator，以及V2.1的has_existing_revisions和read_only_reason。常见 Word 节点 locator 保存原始 body_index 与 table row/col，不用重复文字重新搜索 Word。旧数据缺少 nodes 时按原段落降级构造；无结构映射的旧表格只读。升级支持修订编辑时重新解析原DOCX并创建新报告，不把旧节点editable直接手工改成true；已有修订JSON在原文双指纹和快照不变时可校验导入。
 
 这套记录是编辑审计日志，不是防篡改签名系统。用户仍应保管原文件和修订文件，并在最终 Word 输出后核对；文件指纹和重放校验用于发现不匹配及破坏性冲突。

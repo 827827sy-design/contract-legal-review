@@ -4,7 +4,7 @@ description: 中华人民共和国境内合同法律风险审查。当用户上�
 license: MIT
 metadata:
   agent_created: true
-  version: "2.0"
+  version: "2.1"
   runtime: WorkBuddy
 ---
 
@@ -119,7 +119,7 @@ python scripts/render_report.py --task-dir "<任务目录>"
 - 真实报告恒设 `meta.template_demo=false`；`meta.alerts`（字符串数组）承载解析/知识库/校验统计提示与免责声明，由前端转义渲染。
 - 模板不含打印按钮、打印样式或打印功能（需求明确排除）。
 
-V2 固定编辑器 `assets/editor.js` 自动内嵌，不使用外部 CDN。支持常见段落/表格文字编辑、建议预览应用、独立新条款、修订/清洁模式、撤销恢复与 JSON 保存导入。复杂结构只读；原始文件始终保留。数据契约见 `references/revisions_schema.md`。
+V2 固定编辑器 `assets/editor.js` 自动内嵌，不使用外部 CDN。支持常见段落/表格文字编辑、建议预览应用、独立新条款、修订/清洁模式、撤销恢复与 JSON 保存导入。V2.1 允许含普通 Word 插入/删除修订的文字节点继续编辑；导出时保留原有记录并追加原生修订，不自动接受或拒绝旧修订。既有格式修订保留，但网页只修改文字。图片、字段、移动修订、段落合并等尚未支持的结构仍限制编辑，并显示具体原因。原始文件始终保留。数据契约见 `references/revisions_schema.md`。
 
 **编辑后的闭环**：用户在 HTML 保存实际 `revisions.json` 后返回 WorkBuddy。视角切换只是请求，需 WorkBuddy 在新运行目录重新分析；用户的修订不会自动覆盖。复审使用 `revisions.py materialize` 还原当前稿，保留原始快照与历史；重新审查并分类已解决/仍存在/新增/待确认风险。最终 Word 仅应用用户确认的有效修订，可用 `apply_docx.py` 辅助生成新 DOCX；不覆盖原 Word，不在 HTML 导出 Word。完整命令与边界见 `references/v2_workflow.md`。
 
