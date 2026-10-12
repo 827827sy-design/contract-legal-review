@@ -114,6 +114,7 @@ mark.search-hit{color:inherit;background:#dbeafe;border-radius:2px}.search-hit.s
 .suggestion-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.suggestion-actions .btn{font-size:11px;padding:7px 9px}.risk-origin{font-size:11px;color:#8a5a17;margin-bottom:9px}.editor-message{font-size:11px;color:#456383;line-height:1.7;max-width:100%;padding:5px 0}.editor-message.error{color:#a2233a}
 .handoff,.completion{background:#f5f8ff;border:1px solid #dce7fa;border-radius:8px;padding:12px;margin:8px 0;font-size:12px}.handoff textarea{width:100%;min-height:100px;resize:vertical}.history-list{max-height:150px;overflow:auto;font-size:11px;color:var(--muted);padding-left:20px}.history-list li{padding:4px 0}
 [hidden]{display:none!important}.file-label input{max-width:200px;font-size:11px}.clause{border-left:1px solid #A7F3D0}
+.plan-preview{background:#ECFDF5;border-top:1px solid #A7F3D0;padding:16px;max-height:65vh;overflow:auto;font-size:12px;line-height:1.65}.plan-preview h3{font-size:15px}.plan-preview details{margin:12px 0;padding-bottom:10px;border-bottom:1px solid #c7ddd4}.plan-preview pre,.plan-diff{white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;background:#f7fcf9;color:#24352e}.plan-preview label,.plan-preview label small{display:block}.plan-preview textarea{width:100%;min-height:65px}.plan-diff del{background:#fee2e2;color:#991b1b}.plan-diff ins{background:#d1fae5;color:#065f46}.plan-error{color:#991b1b}
 @media(max-width:760px){.workflow-tools{padding:8px 14px}.editing-toolbar{padding:8px 10px}.edit-form{padding:10px;max-height:45vh}.workflow-row{align-items:flex-start}.topline .actions{flex-wrap:wrap}.save-state{font-size:10px}}
 
 </style>
@@ -159,6 +160,7 @@ mark.search-hit{color:inherit;background:#dbeafe;border-radius:2px}.search-hit.s
    <div class="results-meta"><span id="resultCount"></span><button class="text-btn" id="resetFilters">重置筛选</button></div>
   </div>
   <div class="risk-scroll" id="riskList"></div>
+  <section id="planPanel" class="plan-preview" hidden tabindex="-1" aria-label="统一修改计划预览"><h3 id="planTitle"></h3><p id="planState"></p><div id="planWarnings"></div><div id="planRows"></div><p id="planImpacts"></p><div id="planQuestions"></div><button class="btn" id="savePlanDraft">保存条件为待完善草稿</button> <button class="btn" id="requestPlanReview">生成重新核验请求</button> <button class="btn primary" id="applyPlan">确认整组应用</button> <button class="btn" id="closePlan">关闭预览</button><p>通过系统可执行性检查不代表律师认可或效力保证。应用后风险保持待复审。</p></section>
   <div class="risk-footer">中立审查 · 法律合规与条款完整性 · 建议条款需结合事实确认</div>
  </aside>
 </main>
@@ -200,14 +202,14 @@ function evidenceView(e){return (e.quote?'<div class="ev">'+esc(e.quote)+'</div>
 function cardHTML(r){
  const evidence=Array.isArray(r.evidence)?r.evidence:[],basis=Array.isArray(r.legal_basis)?r.legal_basis:[];
  const checks=Array.isArray(r.manual_checks)?r.manual_checks:[];
- const clause=String(r.proposed_clause??'').trim(),recommendation=String(r.recommendation??'').trim();
+ const plan=r.edit_plan,clause=String(plan?(plan.legacy_display_text??[...(plan.preview_nodes||[]).map(n=>n.after),(plan.edits||[]).filter(e=>e.operation==='insert_clause').map(e=>e.replacement_text||'').join('\n')].filter(Boolean).join('\n\n')):r.proposed_clause??'').trim(),recommendation=String(r.recommendation??'').trim();
  const status=typeof r.verification_status==='object'?r.verification_status?.overall:r.verification_status;
  const sev=Object.hasOwn(labels,r.severity)?r.severity:'review_required';
  return '<details class="card" id="card-'+esc(r.risk_id)+'" data-risk="'+esc(r.risk_id)+'">'+
  '<summary><span class="risk-number">'+esc(r.risk_id)+'</span><div class="card-heading"><h3>'+esc(r.title)+'</h3><div class="card-meta"><span class="badge '+sev+'">'+labels[sev]+'</span><span class="category">'+esc(r.category)+'</span></div></div><span class="disclosure-label"><span class="when-closed">展开 ▾</span><span class="when-open">收起 ▴</span></span></summary>'+
- '<div class="card-body"><div class="clause-nav"><span>'+ (clause?'本项已附建议条款示例':'本项建议条款待补充')+'</span><button class="text-btn" data-show-clause="'+esc(r.risk_id)+'">查看条款示例</button></div><p class="context-line">'+esc(r.conclusion||r.explanation||'未提供风险说明')+'</p>'+
+ '<div class="card-body"><div class="clause-nav"><span>'+esc(plan?plan.quality_result:'旧版建议尚未进行质量核验')+'</span><button class="text-btn" data-show-clause="'+esc(r.risk_id)+'">查看建议与状态</button></div><p class="context-line">'+esc(r.conclusion||r.explanation||'未提供风险说明')+'</p>'+
  '<section class="feature recommendation"><h4>修改与补充建议</h4><div class="body">'+(recommendation?esc(recommendation):'<span class="placeholder">此项尚未提供修改建议，需要补充。</span>')+'</div></section>'+
- '<section class="feature clause" tabindex="-1"><h4>建议条款示例'+(clause?'<button class="copy" data-copy="'+esc(r.risk_id)+'">复制条款</button>':'')+'</h4><div class="body">'+(clause?esc(clause):'<span class="placeholder">待补充：原报告未生成本项的建议条款示例。适合修改或补充条款的事项，应结合事实与依据生成可参考文本；仅能列为待核实的事项，应说明暂不拟写的原因。</span>')+'</div><div class="suggestion-note">供修改时参考；请核实事实、金额、日期及适用条件。</div></section>'+
+ '<section class="feature clause" tabindex="-1"><h4>'+esc(plan?(plan.can_apply?'拟议正式条款':'待完善修改草稿'):'旧版未核验建议')+(clause&&plan?.can_apply?'<button class="copy" data-copy="'+esc(r.risk_id)+'">复制条款</button>':'')+'</h4><div class="body">'+(clause?esc(clause):'<span class="placeholder">缺少可执行条款。请查看具体问题、关联修改方案或人工复核事项。</span>')+'</div><div class="suggestion-note">'+esc(plan?.can_apply?'仅通过系统可执行性检查，须用户确认；应用后仍待复审。':'未满足应用条件，不能直接替换正式合同。')+'</div></section>'+
  '<div class="evidence-label">原文定位'+(evidence.length?' · '+evidence.length+' 处证据':'')+'</div><div class="evidence-tabs">'+evidence.map((e,j)=>'<button class="ev-btn" data-risk="'+esc(r.risk_id)+'" data-evidence="'+j+'">'+(e.no_text?'建议插入位置':'证据 '+(j+1))+'</button>').join('')+'</div><div class="evidence-view">'+(evidence[0]?evidenceView(evidence[0]):'<div class="ev-note">无直接原文证据。</div>')+'</div>'+
  '<details class="subdetails"><summary>风险解释与法律依据'+(basis.length?' · '+basis.length+' 项':'')+'</summary>'+ (r.conclusion?'<p>'+esc(r.conclusion)+'</p>':'')+(r.explanation?'<p>'+esc(r.explanation)+'</p>':'')+
  basis.map(b=>'<div class="law"><strong>'+esc(b.law_name||b.law_id)+' '+esc(b.article_no)+'</strong><div class="verification">版本：'+esc(b.version||'未提供')+' · '+(b.status==='verified'?'原数据标注已核验':'依据待核实：'+esc(b.status||'未提供'))+'</div><p>'+esc(b.kb_text||b.cited_text||'未提供条文内容')+'</p></div>').join('')+
@@ -247,7 +249,7 @@ $('#collapseAll').addEventListener('click',()=>{document.querySelectorAll('.card
 $('#riskList').addEventListener('click',async e=>{
  const jump=e.target.closest('[data-show-clause]');if(jump){const target=jump.closest('.card').querySelector('.clause');target.scrollIntoView({behavior:'smooth',block:'start'});target.focus({preventScroll:true});return}
 
- const copy=e.target.closest('[data-copy]');if(copy){const r=risks.find(r=>r.risk_id===copy.dataset.copy);if(!r?.proposed_clause)return;try{await navigator.clipboard.writeText(r.proposed_clause);toast('条款已复制')}catch{const body=copy.closest('.clause').querySelector('.body');const range=document.createRange();range.selectNodeContents(body);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);toast('已选中条款，请按 Ctrl+C / Command+C 复制')}return}
+ const copy=e.target.closest('[data-copy]');if(copy){const r=risks.find(r=>r.risk_id===copy.dataset.copy);const p=r?.edit_plan;const text=p?.can_apply?[...(p.preview_nodes||[]).map(n=>n.after),...(p.edits||[]).filter(e=>e.operation==='insert_clause').map(e=>e.replacement_text)].filter(Boolean).join('\n\n'):'';if(!text)return;try{await navigator.clipboard.writeText(text);toast('正式条款已复制')}catch{const body=copy.closest('.clause').querySelector('.body');const range=document.createRange();range.selectNodeContents(body);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);toast('已选中条款，请按 Ctrl+C / Command+C 复制')}return}
  const b=e.target.closest('[data-evidence]');if(b){const r=risks.find(r=>r.risk_id===b.dataset.risk);if(r)locate(r,Number(b.dataset.evidence))}
 });
 function openRiskFromMark(mark){

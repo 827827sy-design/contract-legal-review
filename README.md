@@ -12,6 +12,8 @@
 
 V2.1 支持继续编辑含普通 Word 插入/删除修订的段落，生成新 Word 时保留旧历史并追加原生修订，无需先接受旧修订。图片、字段、移动修订、段落合并等未支持结构显示具体限制原因。既有格式修订保留，网页只修改文字；修订模式展示本轮修改，完整旧修订仍在 Word 中。
 
+通用建议质量整改保留现有版本号。WorkBuddy生成正式修改计划及语义关联分析，Python验证位置、原文、条件、冲突、占位、金额和审查记录绑定。缺业务条件或依据时不能应用。多处计划统一预览、确认、执行、撤销和保存；修改成功仍标记待复审。完整流程见 [通用质量工作流](references/quality_workflow.md)。旧建议继续展示，需重新生成计划才能获得新应用保护。
+
 视角切换与修改后复审需要返回 WorkBuddy 真实重新分析；HTML 提供请求指令。最终 DOCX 由 WorkBuddy 读取原始合同与已确认修订生成新文件；浏览器没有 Word 导出或打印功能。
 
 ## 公开访问与其他 agent
@@ -33,10 +35,13 @@ Windows PowerShell 示例：
 $env:CONTRACT_REVIEW_TEST_DIR = Join-Path $env:TEMP 'contract-review-v2-tests'
 python -B -X utf8 tests/test_v2.py
 python -B -X utf8 tests/test_tracked.py
+python -B -X utf8 tests/test_plan_quality.py
+python -B -X utf8 tests/test_unseen_quality.py
+python -B -X utf8 tests/build_quality_fixtures.py
 # 在已安装 Playwright 的开发环境执行，不需要 @playwright/test
 node tests/browser_v2.cjs
 ```
 
-浏览器测试默认使用 msedge；可通过 REVIEW_BROWSER_CHANNEL 指定本机已有的 Chrome/Chromium 通道。测试结果和截图在输出的 FIXTURES 目录，路径同时记录于测试目录的 latest-fixtures.txt。
+浏览器测试默认使用 msedge；底层原有测试仍输出FIXTURES和latest-fixtures.txt。通用质量样本、结果与浏览器记录分别在CONTRACT_REVIEW_TEST_DIR的quality-browser、quality-fixture-results.json、quality-browser-results下。语义审查收据是明确的合成测试数据，不代表独立模型或律师评测。
 
-本版本交付细节、实际测试及限制见 [V2_DELIVERY_REPORT.md](V2_DELIVERY_REPORT.md)。MIT 许可覆盖说明、代码与模板；法律文本的来源及适用规则独立于代码许可。
+原V2交付细节见 [V2_DELIVERY_REPORT.md](V2_DELIVERY_REPORT.md)；本次通用整改及实际测试边界见 [QUALITY_FIX_NOTES.md](QUALITY_FIX_NOTES.md)。MIT 许可覆盖说明、代码与模板；法律文本的来源及适用规则独立于代码许可。

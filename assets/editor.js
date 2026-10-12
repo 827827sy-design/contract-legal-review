@@ -15,6 +15,7 @@ for(const r of risks)for(const e of r.evidence||[]){if(e.no_text||!e.has_span||!
 const names={neutral:'中立',party_a:'甲方',party_b:'乙方',custom:'自定义'};
 let model={schema_version:2,contract:clone(doc.identity),base_nodes:base,operations:[],history:[],redo_stack:[],risk_decisions:{},perspective:clone(DATA.meta.perspective||{mode:'neutral',focus:''})};
 let current=clone(original),savedSnapshot=null,pendingDownload=null,fileHandle=null,editDraft=null,selectedNode=null,dirty=false;
+let planSelection=null,planBusy=false;
 const cacheKey='contract-review-v2:'+doc.identity.file_sha256+':'+doc.identity.content_sha256;
 const event=(action,detail={})=>model.history.push({time:new Date().toISOString(),action,...detail});
 const revision=()=>({...clone(model),current_nodes:Object.fromEntries(current.map(n=>[n.node_id,n.text]))});
@@ -22,6 +23,7 @@ const serialized=()=>JSON.stringify(revision());
 function replay(value) {
  if (!value || value.schema_version!==2 || !equal(value.contract,doc.identity) || !equal(value.base_nodes,base)) throw Error('修订文件与当前原始合同不匹配，已阻止导入。');
  if (!Array.isArray(value.operations)||value.operations.length>10000||!Array.isArray(value.history)||!Array.isArray(value.redo_stack)||typeof value.risk_decisions!=='object') throw Error('修订结构或历史记录无效。');
+ ClausePlanTools.validateGroups(value);
  const nodes=clone(original),ids=new Set(),historical=new Map(original.map(n=>[n.node_id,n]));
  const undone=[];let seenUndone=false;
  for(const op of value.operations) {
@@ -36,6 +38,7 @@ function replay(value) {
   }else if(!['insert','delete','replace'].includes(op.type)||!historical.get(op.node_id)?.editable)throw Error('历史节点不可编辑或类型不合法。');
   if(op.status==='undone'){seenUndone=true;undone.push(op.id);}else if(op.status==='active'&&seenUndone)throw Error('恢复分支与有效操作顺序冲突。');
   if(op.status!=='active'||op.decision==='rejected')continue;
+  const group=value.plan_groups?.[op.group_id];if(group&&op.id===group.operation_ids[0])ClausePlanTools.preflight(group.snapshot,nodes);
   if(op.type==='insert_node') {
    const index=nodes.findIndex(n=>n.node_id===op.anchor_node_id);
    if(index<0||!/^n-[A-Za-z0-9_-]+$/.test(op.node_id)||nodes.some(n=>n.node_id===op.node_id)||op.before_text!==''||typeof op.after_text!=='string'||(nodes[index+1]&&nodes[index+1].block_id===nodes[index].block_id))throw Error('新增条款锚点不可靠。');
@@ -80,7 +83,7 @@ function updateStatus(){
 }
 function invalidate(){persist();renderDocument();renderCards();updateStatus();}
 function nodeChanged(n){return reviewById[n.node_id]?.text!==n.text;}
-function riskStale(r){if((r.evidence||[]).some(e=>e.no_text)&&current.some(n=>n.inserted&&!reviewById[n.node_id]))return true;return (r.evidence||[]).some(e=>{
+function riskStale(r){if(r.edit_plan&&Object.entries(r.edit_plan.scope_node_texts||{}).some(([id,text])=>current.find(n=>n.node_id===id)?.text!==text))return true;if((r.evidence||[]).some(e=>e.no_text)&&current.some(n=>n.inserted&&!reviewById[n.node_id]))return true;return (r.evidence||[]).some(e=>{
  const lo=e.span?.[0],hi=e.span?.[1];
  return reviewNodes.filter(n=>e.block_id===n.block_id||(lo!==undefined&&n.full_start<hi&&n.full_start+cp(n.text).length>lo)).some(n=>current.find(x=>x.node_id===n.node_id)?.text!==n.text);
  });}
@@ -150,31 +153,11 @@ function openManual(nodeId){
  editDraft={node_id:nodeId,before_text:node.text,source:'manual',mode:'replace'};
  $('#editPanel').hidden=false;$('#targetNode').value=nodeId;$('#editMode').value='replace';$('#editText').value=node.text;$('#editBefore').textContent=node.text;$('#editReason').value='人工编辑';$('#editText').focus();
 }
-function targetFor(r){
- if(riskStale(r))return null;
- const explicit=r.edit;
- if(explicit&&explicit.verified!==true)return null;
- if(explicit?.verified){const n=current.find(n=>n.node_id===explicit.node_id);if(n){if(explicit.kind==='insert_clause')return {node:n,mode:'insert'};if(n.editable&&cp(n.text).slice(explicit.start,explicit.end).join('')===explicit.expected_text)return {node:n,mode:'partial',start:explicit.start,end:explicit.end,expected:explicit.expected_text};}}
- if(explicit)return null;
- const e=(r.evidence||[]).find(e=>e.has_span&&!e.no_text&&e.span);
- if(e){const n=reviewNodes.find(n=>n.editable&&e.span[0]>=n.full_start&&e.span[1]<=n.full_start+cp(n.text).length);if(n){const target=current.find(x=>x.node_id===n.node_id);return {node:target,mode:'partial',start:e.span[0]-n.full_start,end:e.span[1]-n.full_start,expected:cp(n.text).slice(e.span[0]-n.full_start,e.span[1]-n.full_start).join('')};}}
- const no=(r.evidence||[]).find(e=>e.no_text&&e.block_id);
- if(no){const nodes=current.filter(n=>n.block_id===no.block_id);if(nodes.length)return {node:nodes[nodes.length-1],mode:'insert'};}
- return null;
-}
-function suggestion(r,edit=false){
- const target=targetFor(r);const text=String(r.proposed_clause||'').trim();
- if(!text){status('本项尚无建议条款，请在编辑面板中自行填写，不能自动把风险说明写入合同。',true);}
- editDraft={node_id:target?.node.node_id||null,before_text:target?.node.text||null,source:'ai',risk_id:r.risk_id,mode:target?.mode||'manual_select',start:target?.start,end:target?.end,expected:target?.expected};
- $('#editPanel').hidden=false;$('#editText').value=text;$('#editReason').value=r.recommendation||r.title;
- $('#editMode').value=target?.mode==='insert'?'insert':target?.mode==='partial'?'partial':'replace';
- if(target){$('#targetNode').value=target.node.node_id;selectedNode=target.node.node_id;$('#editBefore').textContent=target.mode==='partial'?target.expected:target.node.text;status('请核对目标位置与建议内容，再确认应用。');}
- else{$('#editBefore').textContent='没有可靠自动位置，必须明确选择目标节点。';$('#targetNode').value='';status(r.edit&&r.edit.verified!==true?'明确建议目标核验失败，禁止自动应用；请人工选择并核对原文。':'原文已修改或定位不可靠，请选择目标并核对完整原文；已有修改将保留。',true);}
- if(edit)$('#editText').focus();
-}
+function suggestion(r){showPlan(r);}
 function applyDraft(){
  try{
   if(!editDraft)throw Error('请先选择修改位置。');
+  if(editDraft.source==='ai')throw Error('AI建议必须通过修改计划校验和整组确认，不能从解释文字直接应用。');
   const node=current.find(n=>n.node_id===$('#targetNode').value);if(!node)throw Error('必须人工选择目标位置。');
   const mode=$('#editMode').value,text=$('#editText').value;
   if(mode==='insert'){
@@ -196,8 +179,8 @@ function applyDraft(){
  }catch(error){status(error.message,true);}
 }
 function transaction(change){const old=clone(model),oldNodes=clone(current);try{change();refreshFromOperations();}catch(error){model=old;current=oldNodes;status('操作已取消，原状态保留：'+error.message,true);}}
-function undo(){transaction(()=>{const op=[...model.operations].reverse().find(o=>o.status==='active');if(!op)return;op.status='undone';model.redo_stack.push(op.id);event('undo',{revision_id:op.id});});}
-function redo(){transaction(()=>{const id=model.redo_stack.pop();const op=model.operations.find(o=>o.id===id);if(!op)return;op.status='active';event('redo',{revision_id:id});});}
+function undo(){transaction(()=>{const op=[...model.operations].reverse().find(o=>o.status==='active');if(!op)return;const ids=op.group_id?model.plan_groups[op.group_id].operation_ids:[op.id];for(const id of [...ids].reverse()){model.operations.find(o=>o.id===id).status='undone';model.redo_stack.push(id);}event('undo',{revision_id:op.id,group_id:op.group_id||null});});}
+function redo(){transaction(()=>{const last=model.redo_stack.at(-1),op=model.operations.find(o=>o.id===last);if(!op)return;const ids=op.group_id?model.plan_groups[op.group_id].operation_ids:[last];for(const id of ids){if(model.redo_stack.pop()!==id)throw Error('整组恢复顺序冲突。');model.operations.find(o=>o.id===id).status='active';}event('redo',{revision_id:last,group_id:op.group_id||null});});}
 function refreshFromOperations(){
  let nodes=clone(original);
  for(const op of model.operations){if(op.status!=='active'||op.decision==='rejected')continue;
@@ -208,13 +191,67 @@ function refreshFromOperations(){
 function renderHistory(){
  $('#historyList').innerHTML=model.operations.map(o=>'<li><strong>'+esc(o.id)+'</strong> · '+esc(o.node_id)+' · '+(o.status==='active'?'有效':o.status==='undone'?'已撤销':'已分支保留')+' · '+(o.decision==='confirmed'?'已确认':'待确认')+'<div>'+esc(o.reason)+' · '+esc(o.time)+'</div></li>').join('')||'<li>尚无修改。历史不会因撤销而删除。</li>';
 }
+const planNames={ready:'可提交确认',needs_input:'需补充条件',coordinated_review:'需关联修改',manual_review:'需人工复核'};
+function showPlan(r){
+ planSelection=r;const p=r.edit_plan;
+ $('#planPanel').hidden=false;$('#planTitle').textContent=r.risk_id+' · '+r.title;
+ if(!p){$('#planState').textContent='旧版建议尚未通过质量审查';$('#planWarnings').textContent='保留展示。请返回WorkBuddy生成正式修改计划；不从证据推测替换范围。';$('#planRows').innerHTML='';$('#planQuestions').innerHTML='';$('#planImpacts').textContent='';$('#applyPlan').disabled=true;return;}
+ let runtime='';try{if(p.can_apply)ClausePlanTools.preflight(p,current);}catch(e){runtime=e.message;}
+ const drafted=model.plan_drafts?.[p.plan_id];if(drafted?.needs_regeneration&&drafted.draft_id!==p.raw_plan?.input_draft_id)runtime='新增条件尚未重新生成、核验条款。';
+ if(Object.values(model.plan_groups||{}).some(g=>g.plan_fingerprint===p.plan_fingerprint&&model.operations.some(o=>o.group_id===g.group_id&&o.status==='active')))runtime='本计划已应用，不能重复执行。';
+ $('#planState').textContent=runtime?('当前不可应用 · '+runtime+' · 风险仍待复审'):(planNames[p.readiness]||'需人工复核')+' · '+p.quality_result+' · 应用后仍待复审';
+ $('#planWarnings').innerHTML=[...new Set([...p.blockers,...(runtime?[runtime]:[])])].map(t=>'<p>'+esc(t)+'</p>').join('')||'<p>所有系统检查条件已满足，请逐项核对后确认整组应用。</p>';
+ $('#planRows').innerHTML=p.edits.map(e=>{const node=current.find(n=>n.node_id===e.target_node_id),before=e.expected_node_text??'',after=e.operation==='insert_clause'?e.replacement_text:(p.preview_nodes.find(n=>n.node_id===e.target_node_id)?.after??e.replacement_text);
+  const diff=e.draft_pending?'':diffSegments(e.operation==='insert_clause'?'':before,after).map(s=>s.type==='delete'?'<del>'+esc(s.text)+'</del>':s.type==='insert'?'<ins>'+esc(s.text)+'</ins>':esc(s.text)).join('');
+  return '<details open><summary>'+esc(e.target_node_id)+' · '+esc({partial:'局部替换',replace:'整段替换',delete_clause:'删除条款文字',insert_clause:'新增条款'}[e.operation])+'</summary><p>计划基准原文</p><pre>'+esc(before)+'</pre><p>'+(e.draft_pending?'尚待条件确认后生成正式文字':'修改后正式文字'+(after?'':'（删除，保留段落结构）'))+'</p><pre>'+esc(e.draft_pending?'':after)+'</pre><p>新增及删除差异</p><div class="plan-diff">'+diff+'</div>'+(!node||node.text!==before?'<p class="plan-error">当前原文已变化，禁止按旧计划应用。</p>':'')+'<p>修改原因：'+esc(p.reason)+'；关联节点：'+esc((e.dependencies||[]).join('、')||'未列出')+'</p></details>';}).join('');
+ const targetIds=new Set(Object.keys(p.scope_node_texts||{}));
+ const affected=risks.filter(x=>x.risk_id!==r.risk_id&&(Object.keys(x.edit_plan?.scope_node_texts||{}).some(id=>targetIds.has(id))||(x.evidence||[]).some(e=>current.some(n=>n.block_id===e.block_id&&targetIds.has(n.node_id))))).map(x=>x.risk_id+' '+x.title);
+ $('#planImpacts').textContent='可能受到影响的其他风险：'+(affected.join('；')||'分析未列出；不能据此保证不存在关联。');
+ $('#planQuestions').innerHTML=(p.questions||[]).filter(q=>q&&typeof q==='object').map(q=>'<label>'+esc(q.question)+(q.required?'（必填）':'')+(q.impact?'<small>'+esc(q.impact)+'</small>':'')+(Array.isArray(q.options)?'<ul>'+q.options.map(o=>'<li>'+esc(typeof o==='string'?o:(o.label||o.value||''))+(o?.impact?'：'+esc(o.impact):'')+'</li>').join('')+'</ul>':'')+'<textarea data-plan-question="'+esc(q.id)+'">'+esc(drafted?.answers?.[q.id]??q.answer??'')+'</textarea></label>').join('');
+ $('#applyPlan').disabled=!p.can_apply||Boolean(runtime);$('#savePlanDraft').disabled=!(p.questions||[]).length;$('#planPanel').focus();
+}
+function savePlanDraft(){
+ const p=planSelection?.edit_plan;if(!p){status('旧版建议需由WorkBuddy生成计划。',true);return;}
+ if(!p.plan_id||['__proto__','constructor','prototype'].includes(p.plan_id)){status('计划ID不合法，需重新生成。',true);return;}
+ const answers=Object.fromEntries([...$('#planQuestions').querySelectorAll('[data-plan-question]')].map(el=>[el.dataset.planQuestion,el.value.trim()]));
+ model.plan_drafts??={};const draft_id='draft-'+crypto.randomUUID();model.plan_drafts[p.plan_id]={draft_id,plan_id:p.plan_id,plan_fingerprint:p.plan_fingerprint,answers,needs_regeneration:true,time:new Date().toISOString()};
+ event('save_plan_draft',{plan_id:p.plan_id,draft_id,answers:clone(answers),plan_fingerprint:p.plan_fingerprint});invalidate();$('#applyPlan').disabled=true;status('条件已保存为待完善草稿；尚未修改合同，需保存JSON并返回WorkBuddy重新生成、核验受影响计划。');
+}
+async function applyPlan(){
+ if(planBusy)return;planBusy=true;$('#applyPlan').disabled=true;
+ try{
+  const r=planSelection,p=r?.edit_plan;if(!p)throw Error('没有经过校验的修改计划。');
+  if(p.source_file_sha256!==doc.identity.file_sha256)throw Error('修改计划与当前原始合同不匹配。');
+  const before=serialized();await ClausePlanTools.verify(p);if(before!==serialized())throw Error('核验期间编辑状态已变化，请重新预览。');
+  const drafted=model.plan_drafts?.[p.plan_id];if(drafted?.needs_regeneration&&drafted.draft_id!==p.raw_plan?.input_draft_id)throw Error('补充条件尚未完成重新核验。');
+  if(Object.values(model.plan_groups||{}).some(g=>g.plan_fingerprint===p.plan_fingerprint&&model.operations.some(o=>o.group_id===g.group_id&&o.status==='active')))throw Error('同一计划已应用，禁止重复应用。');
+  const steps=ClausePlanTools.preflight(p,current);
+  if(!confirm('确认应用本计划的全部 '+p.edits.length+' 项动作？修改会整组记录，可整体撤销；风险仍需复审。'))return;
+  const proposed=clone(model),next=clone(current),abandoned=new Set(proposed.redo_stack);proposed.operations.forEach(o=>{if(abandoned.has(o.id))o.status='abandoned'});proposed.redo_stack=[];
+  const gid='group-'+crypto.randomUUID(),ids=[];
+  for(const step of steps){const id='rev-'+crypto.randomUUID();ids.push(id);let op;
+   if(step.kind==='insert'){const nid='n-'+crypto.randomUUID(),at=next.findIndex(n=>n.node_id===step.anchor);next.splice(at+1,0,{node_id:nid,block_id:nid,kind:'paragraph',text:step.after,editable:true,inserted:true,anchor_node_id:step.anchor});op={type:'insert_node',node_id:nid,anchor_node_id:step.anchor};}
+   else {const n=next.find(n=>n.node_id===step.node_id);if(n.text!==step.before)throw Error('整组执行原文冲突。');n.text=step.after;op={type:step.after?'replace':'delete',node_id:step.node_id};}
+   proposed.operations.push({...op,id,group_id:gid,plan_id:p.plan_id,edit_ids:step.edit_ids,status:'active',decision:'pending',source:'ai',perspective:clone(DATA.meta.perspective||{mode:'neutral'}),time:new Date().toISOString(),review_id:reviewId,risk_id:r.risk_id,reason:p.reason,before_text:step.before,after_text:step.after,start:0,end:cp(step.before).length,removed_text:step.before,inserted_text:step.after});
+  }
+  proposed.plan_groups??={};proposed.plan_groups[gid]={group_id:gid,plan_id:p.plan_id,plan_fingerprint:p.plan_fingerprint,operation_ids:ids,snapshot:clone(p)};
+  proposed.risk_status??={};proposed.risk_status[riskKey(r.risk_id)]={status:'needs_re_review',group_id:gid};proposed.history.push({action:'apply_plan',group_id:gid,time:new Date().toISOString(),risk_status:'needs_re_review'});
+  proposed.current_nodes=Object.fromEntries(next.map(n=>[n.node_id,n.text]));const verified=replay(proposed);delete proposed.current_nodes;model=proposed;current=verified;invalidate();showPlan(r);status('整组修改已记录，全部保持待确认；原风险及关联风险仍需复审。');
+ }catch(e){status('计划未应用：'+e.message,true);}
+ finally{planBusy=false;}
+}
+$('#applyPlan').addEventListener('click',applyPlan);$('#savePlanDraft').addEventListener('click',savePlanDraft);$('#closePlan').addEventListener('click',()=>{$('#planPanel').hidden=true;planSelection=null;});
+$('#requestPlanReview').addEventListener('click',()=>{savePlanDraft();$('#handoffPanel').hidden=false;$('#handoffText').value='请读取原合同、已有审查结果及我保存的revisions.json中的plan_drafts。只重新生成并核验补充条件影响的修改计划与关联范围，保留原有编辑和历史；必要时请求更多条件。将输入draft_id绑定到新计划input_draft_id并重新进行10项语义审查，不把待完善草稿当成已应用修改，不把应用当成风险已解决。';});
 function decorateCards(){
  for(const card of document.querySelectorAll('.card')){
   const r=risks.find(r=>r.risk_id===card.dataset.risk),body=card.querySelector('.card-body');if(!r||!body)continue;
   const source={legal:'法律风险',company_policy:'企业制度',negotiation:'商务谈判建议',experience:'用户经验'}[r.risk_source||'legal'];
   const stale=riskStale(r),rejected=model.risk_decisions[riskKey(r.risk_id)]?.decision==='rejected';
+  const draft=model.plan_drafts?.[r.edit_plan?.plan_id],needsInputReview=draft?.needs_regeneration&&draft.draft_id!==r.edit_plan?.raw_plan?.input_draft_id;
+  if(stale||needsInputReview){const note=body.querySelector('.suggestion-note');if(note)note.textContent='当前正文或补充条件已变化，原方案不可直接应用；风险保持待复审。';const copy=body.querySelector('[data-copy]');if(copy)copy.disabled=true;const tag=body.querySelector('.clause-nav span');if(tag)tag.textContent='原计划需重新核验';}
   body.insertAdjacentHTML('afterbegin','<div class="risk-origin">'+esc(source)+(stale?' · 此处已修改，建议重新审查':'')+(rejected?' · 暂不采纳':'')+'</div>');
-  body.insertAdjacentHTML('beforeend','<div class="suggestion-actions"><button class="btn" data-apply="'+esc(r.risk_id)+'">应用到原文</button><button class="btn" data-edit-suggestion="'+esc(r.risk_id)+'">编辑建议后应用</button><button class="btn" data-reject="'+esc(r.risk_id)+'">'+(rejected?'恢复待确认':'暂不采纳')+'</button></div>');
+  const p=r.edit_plan,action=!p?'核验旧版建议':p.readiness==='needs_input'?'完善条款':p.readiness==='coordinated_review'?'查看关联修改方案':p.can_apply?'预览修改':'查看人工复核事项';
+  body.insertAdjacentHTML('beforeend','<div class="suggestion-actions"><button class="btn" data-apply="'+esc(r.risk_id)+'">'+action+'</button><button class="btn" data-reject="'+esc(r.risk_id)+'">'+(rejected?'恢复待确认':'暂不采纳')+'</button></div>');
  }
 }
 const oldRender=renderCards;renderCards=function(){oldRender();decorateCards();};
@@ -268,7 +305,7 @@ $('#riskList').addEventListener('click',e=>{const b=e.target.closest('[data-appl
 });
 $('#saveNative').addEventListener('click',saveNative);$('#downloadRevisions').addEventListener('click',download);
 $('#confirmDownload').addEventListener('click',()=>{if(!pendingDownload||pendingDownload!==serialized()){status('下载后又有修改，请重新下载最新记录。',true);return;}savedSnapshot=pendingDownload;pendingDownload=null;$('#confirmDownload').hidden=true;updateStatus();status('已记录你对下载文件保存成功的确认。');});
-$('#importRevisions').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>20*1024*1024)throw Error('修订文件超过 20MB。');const value=JSON.parse(await file.text());replay(value);if(dirty&&model.operations.length&&!confirm('导入将替换当前浏览器编辑状态。请确保现有记录已保存；继续？'))return;restore(value,true);status('修订文件校验通过，编辑状态与历史已恢复。');}catch(error){status('导入失败：'+error.message,true);}e.target.value='';});
+$('#importRevisions').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>20*1024*1024)throw Error('修订文件超过 20MB。');const value=JSON.parse(await file.text());for(const g of Object.values(value.plan_groups||{}))await ClausePlanTools.verify(g.snapshot);replay(value);if(dirty&&model.operations.length&&!confirm('导入将替换当前浏览器编辑状态。请确保现有记录已保存；继续？'))return;restore(value,true);status('修订文件校验通过，编辑状态与历史已恢复。');}catch(error){status('导入失败：'+error.message,true);}e.target.value='';});
 $('#perspectiveRequest').addEventListener('click',()=>handoff('perspective'));$('#rereviewRequest').addEventListener('click',()=>handoff('rereview'));$('#copyHandoff').addEventListener('click',()=>copyText($('#handoffText').value));$('#finishEditing').addEventListener('click',finish);
 $('#saveNative').disabled=typeof window.showSaveFilePicker!=='function';
 $('#preferencesInfo').textContent=DATA.editor.context.preferences_configured?'已加载 '+(DATA.editor.context.preferences||[]).length+' 项适用偏好。查看、修改或禁用请返回 WorkBuddy。':'未配置长期偏好。首次审查请由 WorkBuddy 询问；可跳过并采用默认中立标准。';

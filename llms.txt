@@ -16,6 +16,10 @@
 - [Delivery report](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/V2_DELIVERY_REPORT.md)
 
 ## Scripts
+- [General quality workflow](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/quality_workflow.md)
+- [Clause plan quality checks](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/plan_quality.py)
+- [Atomic plan executor](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/plan_executor.py)
+- [Quality fix notes and testing boundaries](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/QUALITY_FIX_NOTES.md)
 - [Contract extraction](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/extract_contract.py)
 - [Law search](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/search_law.py)
 - [Review validation](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/validate_review.py)
@@ -31,6 +35,7 @@
 - [Native Word text revisions](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/docx_tracked.py)
 
 ## Resources
+- [Fixed plan validation JavaScript](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/assets/plan_tools.js)
 - [Civil Code index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/minfadian.json)
 - [Labor Contract Law index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/laodonghetongfa.json)
 - [Company Law index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/gongsifa.json)

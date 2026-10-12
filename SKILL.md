@@ -83,6 +83,8 @@ law_id：`minfadian`（民法典）、`laodonghetongfa`（劳动合同法2012修
 
 ### 第六步 生成风险草稿 JSON
 
+建议生成与执行前，按 [通用建议质量工作流](references/quality_workflow.md) 分析风险原因、权利义务和关联关系，生成contract_analysis及结构化edit_plan。关键业务条件缺失时提具体问题，不生成虚假的可应用条款。正式replacement_text与解释reason分开；不要使用合同类型、名称、条号或风险编号的固定处理模板。计划需经过确定性检查及WorkBuddy对拟修改完整稿的十项语义检查，不能用定位成功代替风险解决。
+
 按 `references/risk_schema.md` 的 schema 把审查结论写入 `<任务目录>/review_draft.json`。要点：
 - 每条 evidence 的 `quote` 必须从 contract.txt **逐字复制**（可以只截取关键句，但截取部分必须连续逐字一致；跨段落证据拆成多条 evidence，不要用省略号拼接）。
 - 合同原文中同一句话出现多次时，用 `occurrence` 指明第几次出现，或给出更长的 quote 使其唯一。
@@ -99,6 +101,7 @@ python scripts/validate_review.py --task-dir "<任务目录>" --index-dir law_in
 ```
 
 产出 `verified_review.json`。脚本会：核验每条法条是否存在、引用文本是否与知识库一致；把每条 quote 定位到 full_text 精确 span（处理换行/空白/重复出现/块不匹配）；校验枚举与结构；合并完全重复的风险。
+- 新增quality_requests.json：记录需要WorkBuddy完成的语义核查、计划指纹、关联范围和具体问题。Python未执行法律语义审查。按quality_workflow.md填入与计划绑定的真实semantic_review，再重跑校验。缺记录、条件不足、冲突或依据不足的计划不可应用。
 - **看输出中的 issues**：法条不存在/不一致的，回到第五、六步修正草稿（换成真实条文或删除该引用）后重跑；quote 定位失败的，多半是 quote 不是逐字复制（多空格、改标点、省略号拼接），修正后重跑。允许迭代 2-3 轮。
 - 确实无法修正的（如模型幻觉条文已被用户要求保留展示），保持原样——校验结果会在报告中如实标红，不得手工绕过校验。
 
@@ -114,7 +117,7 @@ python scripts/render_report.py --task-dir "<任务目录>"
 - 模板占位符：`__TITLE__` / `__CONTRACT_HTML__` / `__DATA_JSON__`（合同正文与风险数据均经 HTML/JSON 转义嵌入）。
 - 视觉规范：蓝色主色 + 浅灰背景 + 白卡片；原文风险标记为淡色背景（无边框无下划线），当前定位柔和黄色（#ffe9a2）；风险等级显示文字标签（高/中/低风险/待核实）。
 - 顶部折叠：常驻合同标题与「专注原文」；合同类型/审查时间/解析状态/法律版本/范围说明及审查提示（`meta.alerts`）收进默认折叠的「审查信息与范围」。
-- 风险卡片：`<details>` 展开/收起（显示「展开 ▾ / 收起 ▴」，键盘可操作，支持全部收起）；「修改与补充建议」（浅蓝）与「建议条款示例」（浅绿 #ECFDF5，正文透明背景）置于详细法律依据之前的两个独立区域；条款示例支持复制，复制失败回退为选中文本；无示例时浅绿区域保留并显示待补充说明。
+- 风险卡片：保留details和浅蓝建议、浅绿条款区域。按通用质量状态显示预览修改、完善条款、查看关联修改方案或人工复核事项。统一预览完整原文、修改后文字、差异、原因、受影响风险及待确认问题。can_apply不成立时禁止应用，补充输入仅保存为待完善草稿。解释不进入正式条款，修改插入后风险仍待复审。
 - 缺失条款（no_text）：**不生成任何原文高亮**，只把 evidence 的 block_id 设为建议插入位置，前端滚动定位并以 `.anchor-current` 标注该块，显示"无直接原文，已定位建议插入位置"。
 - 真实报告恒设 `meta.template_demo=false`；`meta.alerts`（字符串数组）承载解析/知识库/校验统计提示与免责声明，由前端转义渲染。
 - 模板不含打印按钮、打印样式或打印功能（需求明确排除）。
@@ -132,6 +135,7 @@ V2 固定编辑器 `assets/editor.js` 自动内嵌，不使用外部 CDN。支�
 ## 详细参考（按需读取）
 
 - `references/risk_schema.md` — review_draft.json 完整字段定义与正反例。
+- `references/quality_workflow.md` — 通用生成、语义关联、分层质量审查、整组执行及受影响范围复核。
 - `references/review_checklist.md` — 通用核查事项 + 15 类合同类型专项核查点。
 - `references/law_topics.md` — 三部法律的主题索引清单与检索策略（含条号速查：合同编重点条文、劳动合同法必备条款等）。
 - `references/v2_workflow.md` — WorkBuddy 首次偏好、视角、编辑、保存恢复、Word 生成与复审完整步骤。

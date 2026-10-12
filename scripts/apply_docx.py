@@ -47,6 +47,10 @@ def main():
     contract=read_json(task/('base_contract.json' if (task/'base_contract.json').exists() else 'contract.json'))
     if file_sha256(src)!=contract['file_sha256']:raise ValueError('原始 DOCX 校验和不匹配。')
     revision=read_json(Path(args.revisions));nodes=replay(document_for(contract),revision,confirmed_only=True)
+    from plan_quality import formal_issues
+    literal_terms=[term for g in revision.get('plan_groups',{}).values() for term in g.get('snapshot',{}).get('raw_plan',{}).get('literal_bracket_terms',[])]
+    unfinished=[issue for node in nodes if node.get('changed') for issue in formal_issues(node['text'],literal_terms)]
+    if unfinished:raise ValueError('有效修改仍包含待完善或说明性内容，不能作为完成稿导出：'+'；'.join(sorted(set(unfinished))))
     if src.suffix.lower()!='.docx':raise ValueError('自动导出仅支持 DOCX。其他格式请由 WorkBuddy 转换。')
     with zipfile.ZipFile(src) as archive:
         original_xml=archive.read('word/document.xml')

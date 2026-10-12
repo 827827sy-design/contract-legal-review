@@ -1,0 +1,1141 @@
+{
+  "purpose": "Synthetic golden protocol/content fixtures. Semantic receipts are explicit test data, not an independently called model or legal opinion.",
+  "cases": [
+    {
+      "case_id": "purchase_group",
+      "contract_type": "采购合同",
+      "paragraphs": [
+        "采购合同",
+        "买方于验收后30日支付货款。",
+        "同一货款于验收后60日到期。",
+        "供货人仍承担一年质量保修义务。"
+      ],
+      "analysis": {
+        "edges": [
+          {
+            "from": "b0002",
+            "to": "b0003",
+            "relationship": "condition_dependency",
+            "source_quote": "买方于验收后30日支付货款。",
+            "target_quote": "同一货款于验收后60日到期。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          },
+          {
+            "from": "b0003",
+            "to": "b0004",
+            "relationship": "rights_preservation",
+            "source_quote": "同一货款于验收后60日到期。",
+            "target_quote": "供货人仍承担一年质量保修义务。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          }
+        ],
+        "obligations": [
+          {
+            "id": "warranty",
+            "node_ids": [
+              "b0004"
+            ],
+            "summary": "保留一年保修权利。"
+          }
+        ]
+      },
+      "raw_plan": {
+        "plan_id": "plan-test",
+        "risk_id": "stable-risk",
+        "reason": "统一已确认的付款时间，保留未变更的担保或退还权利。",
+        "questions": [],
+        "business_terms": [
+          {
+            "id": "deadline",
+            "value": "30日",
+            "confirmed": true,
+            "source": "测试样本双方明确确认，不是实际用户合同选择。"
+          }
+        ],
+        "edits": [
+          {
+            "edit_id": "edit-b0002-None",
+            "target_node_id": "b0002",
+            "operation": "replace",
+            "expected_node_text": "买方于验收后30日支付货款。",
+            "expected_original": "买方于验收后30日支付货款。",
+            "start": null,
+            "end": null,
+            "replacement_text": "本合同货款由买方于验收后30日支付。",
+            "dependencies": []
+          },
+          {
+            "edit_id": "edit-b0003-None",
+            "target_node_id": "b0003",
+            "operation": "replace",
+            "expected_node_text": "同一货款于验收后60日到期。",
+            "expected_original": "同一货款于验收后60日到期。",
+            "start": null,
+            "end": null,
+            "replacement_text": "本合同同一货款的付款到期日为验收后30日。",
+            "dependencies": []
+          }
+        ],
+        "required_edit_node_ids": [
+          "b0002",
+          "b0003"
+        ],
+        "postconditions": [
+          {
+            "type": "absent",
+            "node_ids": [
+              "b0002",
+              "b0003"
+            ],
+            "text": "60日"
+          },
+          {
+            "type": "present",
+            "node_ids": [
+              "b0004"
+            ],
+            "text": "一年质量保修义务"
+          }
+        ],
+        "amount_records": [],
+        "risk_context": {
+          "title": "相同义务的条件冲突",
+          "conclusion": "需要统一条件。",
+          "explanation": "本测试提供的两处条件描述不同。",
+          "evidence_verified": true
+        }
+      },
+      "semantic_checks": {
+        "addresses_cause": {
+          "result": "pass",
+          "reason": "统一已确认的付款时间，保留未变更的担保或退还权利。"
+        },
+        "removes_cause": {
+          "result": "pass",
+          "reason": "对照原风险涉及的条件和计划修改后完整节点核查，不以插入成功作结论。"
+        },
+        "related_consistency": {
+          "result": "pass",
+          "reason": "已对照关联图中的定义、付款和结算/退款条款，范围为b0002,b0003"
+        },
+        "no_duplicate_liability": {
+          "result": "pass",
+          "reason": "本次未叠加报酬、损害赔偿或重复付款义务。"
+        },
+        "preserves_rights": {
+          "result": "pass",
+          "reason": "未修改计划范围外的保修、退款、验收或资料保留义务；具体文字后置条件另行校验。"
+        },
+        "no_new_major_risk": {
+          "result": "pass",
+          "reason": "本样本修改限定在所述商务条件与文本一致性范围；未增加担保、免责或新的处罚责任。"
+        },
+        "business_complete": {
+          "result": "pass",
+          "reason": "采用样本明确给定或模拟补充并确认的商务事实，未自行选择关键条件。"
+        },
+        "legal_scope": {
+          "result": "pass",
+          "reason": "仅对本合成样本的已确认条件和文本一致性作系统可执行性审查，不认定整体效力或保证专项合规。"
+        },
+        "perspective_objective": {
+          "result": "pass",
+          "reason": "按中立视角对齐权利义务，未用企业偏好认定违法。"
+        },
+        "scope_complete": {
+          "result": "pass",
+          "reason": "对照本样本全部主文节点建立关联图，没有将条号或相同关键词当作关系结论。"
+        }
+      },
+      "expected_can_apply": true,
+      "source_format": "docx",
+      "held_out": false
+    },
+    {
+      "case_id": "labor_missing",
+      "contract_type": "劳动合同",
+      "paragraphs": [
+        "劳动合同",
+        "劳动报酬为每月【金额】元，每月【日期】支付。",
+        "试用期工资为正式工资的80%，公司依法办理社会保险。"
+      ],
+      "analysis": {
+        "edges": [
+          {
+            "from": "b0002",
+            "to": "b0003",
+            "relationship": "remuneration_dependency",
+            "source_quote": "劳动报酬为每月【金额】元，每月【日期】支付。",
+            "target_quote": "试用期工资为正式工资的80%，公司依法办理社会保险。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          }
+        ],
+        "obligations": [
+          {
+            "id": "insurance",
+            "node_ids": [
+              "b0003"
+            ],
+            "summary": "保留社会保险义务。"
+          }
+        ]
+      },
+      "raw_plan": {
+        "plan_id": "plan-test",
+        "risk_id": "stable-risk",
+        "reason": "工资金额和付款日期是工资条款的关键事实；未知时不能写成可应用条款。",
+        "questions": [
+          {
+            "id": "salary",
+            "question": "请确认月工资金额及计薪口径。",
+            "required": true
+          },
+          {
+            "id": "payday",
+            "question": "请确认固定发薪日。",
+            "required": true
+          }
+        ],
+        "business_terms": [],
+        "edits": [
+          {
+            "edit_id": "edit-b0002-None",
+            "target_node_id": "b0002",
+            "operation": "replace",
+            "expected_node_text": "劳动报酬为每月【金额】元，每月【日期】支付。",
+            "expected_original": "劳动报酬为每月【金额】元，每月【日期】支付。",
+            "start": null,
+            "end": null,
+            "replacement_text": null,
+            "dependencies": [],
+            "draft_pending": true
+          }
+        ],
+        "required_edit_node_ids": [],
+        "postconditions": [],
+        "amount_records": [],
+        "risk_context": {
+          "title": "相同义务的条件冲突",
+          "conclusion": "需要统一条件。",
+          "explanation": "本测试提供的两处条件描述不同。",
+          "evidence_verified": true
+        }
+      },
+      "semantic_checks": {
+        "addresses_cause": {
+          "result": "pass",
+          "reason": "工资金额和付款日期是工资条款的关键事实；未知时不能写成可应用条款。"
+        },
+        "removes_cause": {
+          "result": "manual",
+          "reason": "尚未生成明确报酬条款。"
+        },
+        "related_consistency": {
+          "result": "pass",
+          "reason": "已对照关联图中的定义、付款和结算/退款条款，范围为b0002"
+        },
+        "no_duplicate_liability": {
+          "result": "pass",
+          "reason": "本次未叠加报酬、损害赔偿或重复付款义务。"
+        },
+        "preserves_rights": {
+          "result": "pass",
+          "reason": "未修改计划范围外的保修、退款、验收或资料保留义务；具体文字后置条件另行校验。"
+        },
+        "no_new_major_risk": {
+          "result": "pass",
+          "reason": "本样本修改限定在所述商务条件与文本一致性范围；未增加担保、免责或新的处罚责任。"
+        },
+        "business_complete": {
+          "result": "manual",
+          "reason": "工资金额、发薪日均未提供。"
+        },
+        "legal_scope": {
+          "result": "insufficient",
+          "reason": "试用工资还需实际工资及适用最低工资等事实，未完成核查。"
+        },
+        "perspective_objective": {
+          "result": "pass",
+          "reason": "按中立视角对齐权利义务，未用企业偏好认定违法。"
+        },
+        "scope_complete": {
+          "result": "pass",
+          "reason": "对照本样本全部主文节点建立关联图，没有将条号或相同关键词当作关系结论。"
+        }
+      },
+      "expected_can_apply": false,
+      "source_format": "txt",
+      "held_out": false
+    },
+    {
+      "case_id": "service_rights_loss",
+      "contract_type": "服务合同",
+      "paragraphs": [
+        "服务合同",
+        "客户解除时服务方应退还未履行部分预付款。",
+        "服务方任何情况下均不承担责任。",
+        "未履行部分按双方确认的已完成工作量核算。"
+      ],
+      "analysis": {
+        "edges": [
+          {
+            "from": "b0002",
+            "to": "b0003",
+            "relationship": "liability_relationship",
+            "source_quote": "客户解除时服务方应退还未履行部分预付款。",
+            "target_quote": "服务方任何情况下均不承担责任。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          },
+          {
+            "from": "b0002",
+            "to": "b0004",
+            "relationship": "settlement_dependency",
+            "source_quote": "客户解除时服务方应退还未履行部分预付款。",
+            "target_quote": "未履行部分按双方确认的已完成工作量核算。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          }
+        ],
+        "obligations": [
+          {
+            "id": "refund",
+            "node_ids": [
+              "b0002"
+            ],
+            "summary": "退还未履行部分预付款。"
+          }
+        ]
+      },
+      "raw_plan": {
+        "plan_id": "plan-test",
+        "risk_id": "stable-risk",
+        "reason": "拟修复全面免责，但不能借此删除退款权利。",
+        "questions": [],
+        "business_terms": [],
+        "edits": [
+          {
+            "edit_id": "edit-b0002-None",
+            "target_node_id": "b0002",
+            "operation": "replace",
+            "expected_node_text": "客户解除时服务方应退还未履行部分预付款。",
+            "expected_original": "客户解除时服务方应退还未履行部分预付款。",
+            "start": null,
+            "end": null,
+            "replacement_text": "客户不得要求任何退款。",
+            "dependencies": []
+          },
+          {
+            "edit_id": "edit-b0003-None",
+            "target_node_id": "b0003",
+            "operation": "replace",
+            "expected_node_text": "服务方任何情况下均不承担责任。",
+            "expected_original": "服务方任何情况下均不承担责任。",
+            "start": null,
+            "end": null,
+            "replacement_text": "服务方依法承担违约责任。",
+            "dependencies": []
+          }
+        ],
+        "required_edit_node_ids": [
+          "b0002",
+          "b0003"
+        ],
+        "postconditions": [],
+        "amount_records": [],
+        "risk_context": {
+          "title": "相同义务的条件冲突",
+          "conclusion": "需要统一条件。",
+          "explanation": "本测试提供的两处条件描述不同。",
+          "evidence_verified": true
+        }
+      },
+      "semantic_checks": {
+        "addresses_cause": {
+          "result": "pass",
+          "reason": "拟修复全面免责，但不能借此删除退款权利。"
+        },
+        "removes_cause": {
+          "result": "pass",
+          "reason": "对照原风险涉及的条件和计划修改后完整节点核查，不以插入成功作结论。"
+        },
+        "related_consistency": {
+          "result": "pass",
+          "reason": "已对照关联图中的定义、付款和结算/退款条款，范围为b0002,b0003"
+        },
+        "no_duplicate_liability": {
+          "result": "pass",
+          "reason": "本次未叠加报酬、损害赔偿或重复付款义务。"
+        },
+        "preserves_rights": {
+          "result": "conflict",
+          "reason": "新第二条删去了原有未履行部分退款权利。"
+        },
+        "no_new_major_risk": {
+          "result": "conflict",
+          "reason": "任何退款均被排除，另行引入重大利益损失。"
+        },
+        "business_complete": {
+          "result": "pass",
+          "reason": "采用样本明确给定或模拟补充并确认的商务事实，未自行选择关键条件。"
+        },
+        "legal_scope": {
+          "result": "pass",
+          "reason": "仅对本合成样本的已确认条件和文本一致性作系统可执行性审查，不认定整体效力或保证专项合规。"
+        },
+        "perspective_objective": {
+          "result": "pass",
+          "reason": "按中立视角对齐权利义务，未用企业偏好认定违法。"
+        },
+        "scope_complete": {
+          "result": "pass",
+          "reason": "对照本样本全部主文节点建立关联图，没有将条号或相同关键词当作关系结论。"
+        }
+      },
+      "expected_can_apply": false,
+      "source_format": "txt",
+      "held_out": false
+    },
+    {
+      "case_id": "lease_blind",
+      "contract_type": "租赁合同",
+      "paragraphs": [
+        "租赁合同",
+        "每月租金为人民币3000元（大写：贰仟元整）。",
+        "承租人每月5日前支付租金。退租并交还房屋后十日内返还押金。"
+      ],
+      "analysis": {
+        "edges": [
+          {
+            "from": "b0002",
+            "to": "b0003",
+            "relationship": "rent_payment_and_deposit",
+            "source_quote": "每月租金为人民币3000元（大写：贰仟元整）。",
+            "target_quote": "承租人每月5日前支付租金。退租并交还房屋后十日内返还押金。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          }
+        ],
+        "obligations": [
+          {
+            "id": "deposit",
+            "node_ids": [
+              "b0003"
+            ],
+            "summary": "交还房屋后十日内返还押金。"
+          }
+        ]
+      },
+      "raw_plan": {
+        "plan_id": "plan-test",
+        "risk_id": "stable-risk",
+        "reason": "数字租金与大写租金不一致，需要明确实际租金，不能选择其中一个。",
+        "questions": [
+          {
+            "id": "rent",
+            "question": "月租金是3000元还是2000元，或其他金额？",
+            "required": true
+          }
+        ],
+        "business_terms": [],
+        "edits": [
+          {
+            "edit_id": "edit-b0002-None",
+            "target_node_id": "b0002",
+            "operation": "replace",
+            "expected_node_text": "每月租金为人民币3000元（大写：贰仟元整）。",
+            "expected_original": "每月租金为人民币3000元（大写：贰仟元整）。",
+            "start": null,
+            "end": null,
+            "replacement_text": null,
+            "dependencies": [],
+            "draft_pending": true
+          }
+        ],
+        "required_edit_node_ids": [],
+        "postconditions": [],
+        "amount_records": [],
+        "risk_context": {
+          "title": "相同义务的条件冲突",
+          "conclusion": "需要统一条件。",
+          "explanation": "本测试提供的两处条件描述不同。",
+          "evidence_verified": true
+        }
+      },
+      "semantic_checks": {
+        "addresses_cause": {
+          "result": "pass",
+          "reason": "数字租金与大写租金不一致，需要明确实际租金，不能选择其中一个。"
+        },
+        "removes_cause": {
+          "result": "manual",
+          "reason": "金额冲突仍待商务确认。"
+        },
+        "related_consistency": {
+          "result": "pass",
+          "reason": "已对照关联图中的定义、付款和结算/退款条款，范围为b0002"
+        },
+        "no_duplicate_liability": {
+          "result": "pass",
+          "reason": "本次未叠加报酬、损害赔偿或重复付款义务。"
+        },
+        "preserves_rights": {
+          "result": "pass",
+          "reason": "未修改计划范围外的保修、退款、验收或资料保留义务；具体文字后置条件另行校验。"
+        },
+        "no_new_major_risk": {
+          "result": "pass",
+          "reason": "本样本修改限定在所述商务条件与文本一致性范围；未增加担保、免责或新的处罚责任。"
+        },
+        "business_complete": {
+          "result": "manual",
+          "reason": "实际月租金未确认。"
+        },
+        "legal_scope": {
+          "result": "pass",
+          "reason": "仅对本合成样本的已确认条件和文本一致性作系统可执行性审查，不认定整体效力或保证专项合规。"
+        },
+        "perspective_objective": {
+          "result": "pass",
+          "reason": "按中立视角对齐权利义务，未用企业偏好认定违法。"
+        },
+        "scope_complete": {
+          "result": "pass",
+          "reason": "对照本样本全部主文节点建立关联图，没有将条号或相同关键词当作关系结论。"
+        }
+      },
+      "expected_can_apply": false,
+      "source_format": "txt",
+      "held_out": true
+    },
+    {
+      "case_id": "lease_blind_confirmed",
+      "contract_type": "租赁合同",
+      "paragraphs": [
+        "租赁合同",
+        "每月租金为人民币3000元（大写：贰仟元整）。",
+        "承租人每月5日前支付租金。退租并交还房屋后十日内返还押金。"
+      ],
+      "analysis": {
+        "edges": [
+          {
+            "from": "b0002",
+            "to": "b0003",
+            "relationship": "rent_payment_and_deposit",
+            "source_quote": "每月租金为人民币3000元（大写：贰仟元整）。",
+            "target_quote": "承租人每月5日前支付租金。退租并交还房屋后十日内返还押金。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          }
+        ],
+        "obligations": [
+          {
+            "id": "deposit",
+            "node_ids": [
+              "b0003"
+            ],
+            "summary": "交还房屋后十日内返还押金。"
+          }
+        ]
+      },
+      "raw_plan": {
+        "plan_id": "plan-test",
+        "risk_id": "stable-risk",
+        "reason": "数字租金与大写租金不一致，需要明确实际租金，不能选择其中一个。",
+        "questions": [
+          {
+            "id": "rent",
+            "question": "月租金是3000元还是2000元，或其他金额？",
+            "required": true,
+            "answer": "3000元",
+            "confirmed": true
+          }
+        ],
+        "business_terms": [
+          {
+            "id": "rent",
+            "value": "3000元",
+            "confirmed": true,
+            "source": "仅本测试模拟明确补充，非实际合同选择。"
+          }
+        ],
+        "edits": [
+          {
+            "edit_id": "edit-b0002-None",
+            "target_node_id": "b0002",
+            "operation": "replace",
+            "expected_node_text": "每月租金为人民币3000元（大写：贰仟元整）。",
+            "expected_original": "每月租金为人民币3000元（大写：贰仟元整）。",
+            "start": null,
+            "end": null,
+            "replacement_text": "每月租金为人民币3000元（大写：叁仟元整）。",
+            "dependencies": []
+          }
+        ],
+        "required_edit_node_ids": [],
+        "postconditions": [
+          {
+            "type": "absent",
+            "node_ids": [
+              "b0002"
+            ],
+            "text": "贰仟元整"
+          },
+          {
+            "type": "present",
+            "node_ids": [
+              "b0003"
+            ],
+            "text": "十日内返还押金"
+          }
+        ],
+        "amount_records": [
+          {
+            "node_id": "b0002",
+            "after_quote": "人民币3000元（大写：叁仟元整）",
+            "numeric": "3000",
+            "uppercase": "叁仟元整"
+          }
+        ],
+        "risk_context": {
+          "title": "相同义务的条件冲突",
+          "conclusion": "需要统一条件。",
+          "explanation": "本测试提供的两处条件描述不同。",
+          "evidence_verified": true
+        }
+      },
+      "semantic_checks": {
+        "addresses_cause": {
+          "result": "pass",
+          "reason": "数字租金与大写租金不一致，需要明确实际租金，不能选择其中一个。"
+        },
+        "removes_cause": {
+          "result": "pass",
+          "reason": "对照原风险涉及的条件和计划修改后完整节点核查，不以插入成功作结论。"
+        },
+        "related_consistency": {
+          "result": "pass",
+          "reason": "已对照关联图中的定义、付款和结算/退款条款，范围为b0002"
+        },
+        "no_duplicate_liability": {
+          "result": "pass",
+          "reason": "本次未叠加报酬、损害赔偿或重复付款义务。"
+        },
+        "preserves_rights": {
+          "result": "pass",
+          "reason": "未修改计划范围外的保修、退款、验收或资料保留义务；具体文字后置条件另行校验。"
+        },
+        "no_new_major_risk": {
+          "result": "pass",
+          "reason": "本样本修改限定在所述商务条件与文本一致性范围；未增加担保、免责或新的处罚责任。"
+        },
+        "business_complete": {
+          "result": "pass",
+          "reason": "采用样本明确给定或模拟补充并确认的商务事实，未自行选择关键条件。"
+        },
+        "legal_scope": {
+          "result": "pass",
+          "reason": "仅对本合成样本的已确认条件和文本一致性作系统可执行性审查，不认定整体效力或保证专项合规。"
+        },
+        "perspective_objective": {
+          "result": "pass",
+          "reason": "按中立视角对齐权利义务，未用企业偏好认定违法。"
+        },
+        "scope_complete": {
+          "result": "pass",
+          "reason": "对照本样本全部主文节点建立关联图，没有将条号或相同关键词当作关系结论。"
+        }
+      },
+      "expected_can_apply": true,
+      "source_format": "txt",
+      "held_out": true
+    },
+    {
+      "case_id": "construction_blind",
+      "contract_type": "建设工程相关合同",
+      "paragraphs": [
+        "施工服务约定",
+        "进度款按已审核工程量价款的80%支付，剩余款项竣工验收后支付。",
+        "本合同结算比例为90%，剩余10%作为质保金，质保期届满支付。",
+        "承包人应保留竣工验收资料并履行质保义务。"
+      ],
+      "analysis": {
+        "edges": [
+          {
+            "from": "b0002",
+            "to": "b0003",
+            "relationship": "staged_payment",
+            "source_quote": "进度款按已审核工程量价款的80%支付，剩余款项竣工验收后支付。",
+            "target_quote": "本合同结算比例为90%，剩余10%作为质保金，质保期届满支付。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          },
+          {
+            "from": "b0003",
+            "to": "b0004",
+            "relationship": "acceptance_and_warranty",
+            "source_quote": "本合同结算比例为90%，剩余10%作为质保金，质保期届满支付。",
+            "target_quote": "承包人应保留竣工验收资料并履行质保义务。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          }
+        ],
+        "obligations": [
+          {
+            "id": "acceptance",
+            "node_ids": [
+              "b0004"
+            ],
+            "summary": "验收资料和质保义务均保留。"
+          }
+        ]
+      },
+      "raw_plan": {
+        "plan_id": "plan-test",
+        "risk_id": "stable-risk",
+        "reason": "80%进度款与90%结算可能属于不同阶段，不能因比例不同就自动判定矛盾。需确认阶段对应关系。",
+        "questions": [
+          {
+            "id": "stages",
+            "question": "是否约定进度支付80%，竣工验收累计90%，其余10%为质保金？请确认阶段和付款条件。",
+            "required": true
+          }
+        ],
+        "business_terms": [],
+        "edits": [
+          {
+            "edit_id": "edit-b0002-None",
+            "target_node_id": "b0002",
+            "operation": "replace",
+            "expected_node_text": "进度款按已审核工程量价款的80%支付，剩余款项竣工验收后支付。",
+            "expected_original": "进度款按已审核工程量价款的80%支付，剩余款项竣工验收后支付。",
+            "start": null,
+            "end": null,
+            "replacement_text": null,
+            "dependencies": [],
+            "draft_pending": true
+          },
+          {
+            "edit_id": "edit-b0003-None",
+            "target_node_id": "b0003",
+            "operation": "replace",
+            "expected_node_text": "本合同结算比例为90%，剩余10%作为质保金，质保期届满支付。",
+            "expected_original": "本合同结算比例为90%，剩余10%作为质保金，质保期届满支付。",
+            "start": null,
+            "end": null,
+            "replacement_text": null,
+            "dependencies": [],
+            "draft_pending": true
+          }
+        ],
+        "required_edit_node_ids": [
+          "b0002",
+          "b0003"
+        ],
+        "postconditions": [],
+        "amount_records": [],
+        "risk_context": {
+          "title": "相同义务的条件冲突",
+          "conclusion": "需要统一条件。",
+          "explanation": "本测试提供的两处条件描述不同。",
+          "evidence_verified": true
+        }
+      },
+      "semantic_checks": {
+        "addresses_cause": {
+          "result": "pass",
+          "reason": "80%进度款与90%结算可能属于不同阶段，不能因比例不同就自动判定矛盾。需确认阶段对应关系。"
+        },
+        "removes_cause": {
+          "result": "manual",
+          "reason": "仅有待完善方案，未完成统一表述。"
+        },
+        "related_consistency": {
+          "result": "manual",
+          "reason": "两个比例可能兼容，但阶段及结算范围尚未确认。"
+        },
+        "no_duplicate_liability": {
+          "result": "pass",
+          "reason": "本次未叠加报酬、损害赔偿或重复付款义务。"
+        },
+        "preserves_rights": {
+          "result": "pass",
+          "reason": "未修改计划范围外的保修、退款、验收或资料保留义务；具体文字后置条件另行校验。"
+        },
+        "no_new_major_risk": {
+          "result": "pass",
+          "reason": "本样本修改限定在所述商务条件与文本一致性范围；未增加担保、免责或新的处罚责任。"
+        },
+        "business_complete": {
+          "result": "manual",
+          "reason": "付款阶段与质保金条件需确认。"
+        },
+        "legal_scope": {
+          "result": "insufficient",
+          "reason": "未核验工程专项支付及实际交易主体条件。"
+        },
+        "perspective_objective": {
+          "result": "pass",
+          "reason": "按中立视角对齐权利义务，未用企业偏好认定违法。"
+        },
+        "scope_complete": {
+          "result": "pass",
+          "reason": "对照本样本全部主文节点建立关联图，没有将条号或相同关键词当作关系结论。"
+        }
+      },
+      "expected_can_apply": false,
+      "source_format": "txt",
+      "held_out": true
+    },
+    {
+      "case_id": "cross_reference_blind",
+      "contract_type": "复杂引用合同",
+      "paragraphs": [
+        "退款服务约定",
+        "第1条 完成指客户签署书面验收单；服务费于完成后5日支付。",
+        "第2条 客户付款即视为完成，验收单不是付款条件。",
+        "第3条 退款依第1条的完成定义办理。",
+        "第4条 退款依第2条的完成定义办理。",
+        "未经书面确认，不得扣除客户已付费用。"
+      ],
+      "analysis": {
+        "edges": [
+          {
+            "from": "b0002",
+            "to": "b0003",
+            "relationship": "definition_conflict",
+            "source_quote": "第1条 完成指客户签署书面验收单；服务费于完成后5日支付。",
+            "target_quote": "第2条 客户付款即视为完成，验收单不是付款条件。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          },
+          {
+            "from": "b0002",
+            "to": "b0004",
+            "relationship": "refund_reference",
+            "source_quote": "第1条 完成指客户签署书面验收单；服务费于完成后5日支付。",
+            "target_quote": "第3条 退款依第1条的完成定义办理。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          },
+          {
+            "from": "b0003",
+            "to": "b0005",
+            "relationship": "refund_reference",
+            "source_quote": "第2条 客户付款即视为完成，验收单不是付款条件。",
+            "target_quote": "第4条 退款依第2条的完成定义办理。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          },
+          {
+            "from": "b0005",
+            "to": "b0006",
+            "relationship": "rights_preservation",
+            "source_quote": "第4条 退款依第2条的完成定义办理。",
+            "target_quote": "未经书面确认，不得扣除客户已付费用。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          }
+        ],
+        "obligations": [
+          {
+            "id": "refund",
+            "node_ids": [
+              "b0004",
+              "b0005",
+              "b0006"
+            ],
+            "summary": "保留退款机制和书面确认扣款条件。"
+          }
+        ]
+      },
+      "raw_plan": {
+        "plan_id": "plan-test",
+        "risk_id": "stable-risk",
+        "reason": "完成定义相互冲突，且分别被退款条款引用，必须同步处理定义和交叉引用。",
+        "questions": [
+          {
+            "id": "completion",
+            "question": "完成以客户书面验收还是客户付款为准？两种方案会改变付款与退款条件。",
+            "required": true
+          }
+        ],
+        "business_terms": [],
+        "edits": [
+          {
+            "edit_id": "edit-b0003-None",
+            "target_node_id": "b0003",
+            "operation": "replace",
+            "expected_node_text": "第2条 客户付款即视为完成，验收单不是付款条件。",
+            "expected_original": "第2条 客户付款即视为完成，验收单不是付款条件。",
+            "start": null,
+            "end": null,
+            "replacement_text": null,
+            "dependencies": [],
+            "draft_pending": true
+          },
+          {
+            "edit_id": "edit-b0005-None",
+            "target_node_id": "b0005",
+            "operation": "replace",
+            "expected_node_text": "第4条 退款依第2条的完成定义办理。",
+            "expected_original": "第4条 退款依第2条的完成定义办理。",
+            "start": null,
+            "end": null,
+            "replacement_text": null,
+            "dependencies": [],
+            "draft_pending": true
+          }
+        ],
+        "required_edit_node_ids": [
+          "b0003",
+          "b0005"
+        ],
+        "postconditions": [],
+        "amount_records": [],
+        "risk_context": {
+          "title": "相同义务的条件冲突",
+          "conclusion": "需要统一条件。",
+          "explanation": "本测试提供的两处条件描述不同。",
+          "evidence_verified": true
+        }
+      },
+      "semantic_checks": {
+        "addresses_cause": {
+          "result": "pass",
+          "reason": "完成定义相互冲突，且分别被退款条款引用，必须同步处理定义和交叉引用。"
+        },
+        "removes_cause": {
+          "result": "manual",
+          "reason": "待确定成功条件及关联退款引用。"
+        },
+        "related_consistency": {
+          "result": "pass",
+          "reason": "已对照关联图中的定义、付款和结算/退款条款，范围为b0003,b0005"
+        },
+        "no_duplicate_liability": {
+          "result": "pass",
+          "reason": "本次未叠加报酬、损害赔偿或重复付款义务。"
+        },
+        "preserves_rights": {
+          "result": "pass",
+          "reason": "未修改计划范围外的保修、退款、验收或资料保留义务；具体文字后置条件另行校验。"
+        },
+        "no_new_major_risk": {
+          "result": "pass",
+          "reason": "本样本修改限定在所述商务条件与文本一致性范围；未增加担保、免责或新的处罚责任。"
+        },
+        "business_complete": {
+          "result": "manual",
+          "reason": "存在两个合理商务方案，尚未选择。"
+        },
+        "legal_scope": {
+          "result": "pass",
+          "reason": "仅对本合成样本的已确认条件和文本一致性作系统可执行性审查，不认定整体效力或保证专项合规。"
+        },
+        "perspective_objective": {
+          "result": "pass",
+          "reason": "按中立视角对齐权利义务，未用企业偏好认定违法。"
+        },
+        "scope_complete": {
+          "result": "pass",
+          "reason": "对照本样本全部主文节点建立关联图，没有将条号或相同关键词当作关系结论。"
+        }
+      },
+      "expected_can_apply": false,
+      "source_format": "txt",
+      "held_out": true
+    },
+    {
+      "case_id": "cross_reference_blind_confirmed",
+      "contract_type": "复杂引用合同",
+      "paragraphs": [
+        "退款服务约定",
+        "第1条 完成指客户签署书面验收单；服务费于完成后5日支付。",
+        "第2条 客户付款即视为完成，验收单不是付款条件。",
+        "第3条 退款依第1条的完成定义办理。",
+        "第4条 退款依第2条的完成定义办理。",
+        "未经书面确认，不得扣除客户已付费用。"
+      ],
+      "analysis": {
+        "edges": [
+          {
+            "from": "b0002",
+            "to": "b0003",
+            "relationship": "definition_conflict",
+            "source_quote": "第1条 完成指客户签署书面验收单；服务费于完成后5日支付。",
+            "target_quote": "第2条 客户付款即视为完成，验收单不是付款条件。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          },
+          {
+            "from": "b0002",
+            "to": "b0004",
+            "relationship": "refund_reference",
+            "source_quote": "第1条 完成指客户签署书面验收单；服务费于完成后5日支付。",
+            "target_quote": "第3条 退款依第1条的完成定义办理。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          },
+          {
+            "from": "b0003",
+            "to": "b0005",
+            "relationship": "refund_reference",
+            "source_quote": "第2条 客户付款即视为完成，验收单不是付款条件。",
+            "target_quote": "第4条 退款依第2条的完成定义办理。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          },
+          {
+            "from": "b0005",
+            "to": "b0006",
+            "relationship": "rights_preservation",
+            "source_quote": "第4条 退款依第2条的完成定义办理。",
+            "target_quote": "未经书面确认，不得扣除客户已付费用。",
+            "reason": "两处约定处理同一项付款或定义条件，需结合上下文核查。",
+            "status": "confirmed"
+          }
+        ],
+        "obligations": [
+          {
+            "id": "refund",
+            "node_ids": [
+              "b0004",
+              "b0005",
+              "b0006"
+            ],
+            "summary": "保留退款机制和书面确认扣款条件。"
+          }
+        ]
+      },
+      "raw_plan": {
+        "plan_id": "plan-test",
+        "risk_id": "stable-risk",
+        "reason": "完成定义相互冲突，且分别被退款条款引用，必须同步处理定义和交叉引用。",
+        "questions": [
+          {
+            "id": "completion",
+            "question": "完成以客户书面验收还是客户付款为准？两种方案会改变付款与退款条件。",
+            "required": true,
+            "answer": "书面验收",
+            "confirmed": true
+          }
+        ],
+        "business_terms": [
+          {
+            "id": "completion",
+            "value": "书面验收",
+            "confirmed": true,
+            "source": "测试模拟给定的明确选择。"
+          }
+        ],
+        "edits": [
+          {
+            "edit_id": "edit-b0003-None",
+            "target_node_id": "b0003",
+            "operation": "replace",
+            "expected_node_text": "第2条 客户付款即视为完成，验收单不是付款条件。",
+            "expected_original": "第2条 客户付款即视为完成，验收单不是付款条件。",
+            "start": null,
+            "end": null,
+            "replacement_text": "第2条 完成以客户签署书面验收单为准；客户付款不单独构成完成。",
+            "dependencies": []
+          },
+          {
+            "edit_id": "edit-b0005-None",
+            "target_node_id": "b0005",
+            "operation": "replace",
+            "expected_node_text": "第4条 退款依第2条的完成定义办理。",
+            "expected_original": "第4条 退款依第2条的完成定义办理。",
+            "start": null,
+            "end": null,
+            "replacement_text": "第4条 退款依第1条的完成定义办理；第2条对完成的说明不改变该退款依据。",
+            "dependencies": []
+          }
+        ],
+        "required_edit_node_ids": [
+          "b0003",
+          "b0005"
+        ],
+        "postconditions": [
+          {
+            "type": "absent",
+            "node_ids": [
+              "b0003"
+            ],
+            "text": "客户付款即视为完成"
+          },
+          {
+            "type": "absent",
+            "node_ids": [
+              "b0005"
+            ],
+            "text": "退款依第2条的完成定义办理"
+          },
+          {
+            "type": "present",
+            "node_ids": [
+              "b0006"
+            ],
+            "text": "不得扣除客户已付费用"
+          }
+        ],
+        "amount_records": [],
+        "risk_context": {
+          "title": "相同义务的条件冲突",
+          "conclusion": "需要统一条件。",
+          "explanation": "本测试提供的两处条件描述不同。",
+          "evidence_verified": true
+        }
+      },
+      "semantic_checks": {
+        "addresses_cause": {
+          "result": "pass",
+          "reason": "完成定义相互冲突，且分别被退款条款引用，必须同步处理定义和交叉引用。"
+        },
+        "removes_cause": {
+          "result": "pass",
+          "reason": "对照原风险涉及的条件和计划修改后完整节点核查，不以插入成功作结论。"
+        },
+        "related_consistency": {
+          "result": "pass",
+          "reason": "已对照关联图中的定义、付款和结算/退款条款，范围为b0003,b0005"
+        },
+        "no_duplicate_liability": {
+          "result": "pass",
+          "reason": "本次未叠加报酬、损害赔偿或重复付款义务。"
+        },
+        "preserves_rights": {
+          "result": "pass",
+          "reason": "未修改计划范围外的保修、退款、验收或资料保留义务；具体文字后置条件另行校验。"
+        },
+        "no_new_major_risk": {
+          "result": "pass",
+          "reason": "本样本修改限定在所述商务条件与文本一致性范围；未增加担保、免责或新的处罚责任。"
+        },
+        "business_complete": {
+          "result": "pass",
+          "reason": "采用样本明确给定或模拟补充并确认的商务事实，未自行选择关键条件。"
+        },
+        "legal_scope": {
+          "result": "pass",
+          "reason": "仅对本合成样本的已确认条件和文本一致性作系统可执行性审查，不认定整体效力或保证专项合规。"
+        },
+        "perspective_objective": {
+          "result": "pass",
+          "reason": "按中立视角对齐权利义务，未用企业偏好认定违法。"
+        },
+        "scope_complete": {
+          "result": "pass",
+          "reason": "对照本样本全部主文节点建立关联图，没有将条号或相同关键词当作关系结论。"
+        }
+      },
+      "expected_can_apply": true,
+      "source_format": "txt",
+      "held_out": true
+    }
+  ]
+}

@@ -59,6 +59,8 @@ def replay(document, revision, confirmed_only=False):
     if not isinstance(operations, list) or len(operations)>10000 or not isinstance(revision.get('history'), list):
         raise ValueError('修订操作或历史格式无效。')
     nodes = copy.deepcopy(document['original_nodes'])
+    from plan_executor import validate_groups
+    validate_groups(revision)
     ids = set()
     historical_nodes={n['node_id']:n for n in nodes}
     undone=[];seen_undone=False
@@ -94,6 +96,10 @@ def replay(document, revision, confirmed_only=False):
             continue
         if confirmed_only and op['decision'] != 'confirmed':
             raise ValueError('存在未确认修改；请先由用户确认，不能自动生成最终 Word。')
+        group=revision.get('plan_groups',{}).get(op.get('group_id'))
+        if group and op['id']==group['operation_ids'][0]:
+            from plan_quality import verify_compiled
+            verify_compiled(group['snapshot'],{'nodes':nodes,'blocks':[],'file_sha256':document['identity']['file_sha256']})
         kind = op.get('type')
         if kind == 'insert_node':
             if not re.fullmatch(r'n-[A-Za-z0-9_-]+', op.get('node_id','')) or any(n['node_id']==op['node_id'] for n in nodes):
@@ -130,6 +136,10 @@ def replay(document, revision, confirmed_only=False):
         raise ValueError('恢复栈与已撤销历史不一致。')
     future=copy.deepcopy(nodes)
     for op in [o for o in operations if o['status']=='undone']:
+        group=revision.get('plan_groups',{}).get(op.get('group_id'))
+        if group and op['id']==group['operation_ids'][0]:
+            from plan_quality import verify_compiled
+            verify_compiled(group['snapshot'],{'nodes':future,'blocks':[],'file_sha256':document['identity']['file_sha256']})
         if op['type']=='insert_node':
             at=next((i for i,n in enumerate(future) if n['node_id']==op['anchor_node_id']),None)
             if at is None:raise ValueError('已撤销条款的恢复锚点不存在。')

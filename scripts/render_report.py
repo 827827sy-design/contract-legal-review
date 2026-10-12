@@ -207,6 +207,7 @@ def main():
             "risk_source":r.get('risk_source','legal'),
             "preference_id":r.get('preference_id',''),
             "edit":r.get('edit'),
+            "edit_plan":r.get('edit_plan'),
             "evidence": [{
                 "i": ev["i"], "quote": ev.get("quote", ""), "has_span": ev["has_span"],
                 "no_text": ev.get("no_text", False), "pos_desc": ev.get("pos_desc", ""),
@@ -236,6 +237,7 @@ def main():
             "template_demo": False,  # 真实审查输出恒为 false
             "perspective":meta.get('perspective',{'mode':'neutral','focus':''}),
             "review_id":meta.get('review_id',''),
+            "contract_analysis":meta.get('contract_analysis'),
         },
         "risks": data_risks,
     }
@@ -256,7 +258,7 @@ def main():
     import re
     replacements={'__TITLE__':esc(title),'__CONTRACT_HTML__':render_contract(contract,spans_all),
                   '__DATA_JSON__':json_for_script(data),
-                  '__EDITOR_JS__':(tpl_path.parent/'editor.js').read_text(encoding='utf-8')}
+                  '__EDITOR_JS__':(Path(__file__).resolve().parent.parent/'assets/plan_tools.js').read_text(encoding='utf-8')+'\n'+(tpl_path.parent/'editor.js').read_text(encoding='utf-8')}
     html=re.sub(r'__TITLE__|__CONTRACT_HTML__|__DATA_JSON__|__EDITOR_JS__',lambda m:replacements[m.group(0)],template)
 
     out = task_dir / "contract_review.html"

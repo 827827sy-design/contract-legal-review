@@ -29,3 +29,7 @@ insert_node 另外带 `anchor_node_id`，node_id 为以 `n-` 开头的唯一 ID�
 `contract.json` 增量包含 `nodes[]`：稳定 node_id、block_id、kind、text、block_start/full_start、editable、locator，以及V2.1的has_existing_revisions和read_only_reason。常见 Word 节点 locator 保存原始 body_index 与 table row/col，不用重复文字重新搜索 Word。旧数据缺少 nodes 时按原段落降级构造；无结构映射的旧表格只读。升级支持修订编辑时重新解析原DOCX并创建新报告，不把旧节点editable直接手工改成true；已有修订JSON在原文双指纹和快照不变时可校验导入。
 
 这套记录是编辑审计日志，不是防篡改签名系统。用户仍应保管原文件和修订文件，并在最终 Word 输出后核对；文件指纹和重放校验用于发现不匹配及破坏性冲突。
+
+增量plan_groups记录完整计划快照、plan_fingerprint及连续operation_ids。组内操作携带group_id、plan_id、edit_ids；状态和最终确认必须整组一致。校验会拒绝缺步骤、部分撤销/确认、原文变化、旧语义记录和重复应用。旧无group_id操作仍兼容。
+
+plan_drafts仅保存待补充条件（draft_id、plan_id、plan_fingerprint、answers、needs_regeneration），不属于有效正文修改。risk_status记录needs_re_review，不因应用或确认修改变成resolved。模型复审分类需绑定当前稿，见quality_workflow.md。

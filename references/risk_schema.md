@@ -28,19 +28,35 @@
 | evidence | array | 是 | 原文证据，见下。至少 1 条；缺失条款用 no_text 形式 |
 | legal_basis | array | 否 | 法律依据，见下。可为空数组（纯完整性建议时） |
 | recommendation | string | 是 | 中立、可操作的修改/补充建议 |
-| proposed_clause | string | 否 | 建议条款示例文本（不是最终法律文本，报告中会标注"示例"）。未知金额、日期、条件等用明确占位符（如【金额】【日期】），**不得编造**。适合修改/补充的事项应尽量提供；仅能列为待核实的应留空（报告中保留浅绿区域并显示待补充说明） |
+| proposed_clause | string | 否 | 旧版展示字段，仅兼容既有示例或草稿，不作为应用来源。新建议使用 edit_plan；关键条件未知时列 questions，正式 replacement_text=null、draft_pending=true。不得编造或把占位文本当作完成条款 |
 | manual_checks | array[string] | 否 | 需人工核实的事项（主体资格、审批手续、时间效力、超范围法律问题等） |
 | scope_note | string | 否 | 范围说明，如"涉及个人信息保护，超出三部法律范围，仅作待核实提示" |
 | risk_source | enum | 否 | V2：legal / company_policy / negotiation / experience；旧数据默认 legal。偏好不等于法律 |
 | preference_id | string | 否 | 对应用户确认的长期偏好编号 |
 | objective_legal_conclusion | string | 否 | 客观法律判断，切换立场时保持同一事实下的一致性 |
-| edit | object | 否 | node_id、kind（partial/replace/insert_clause）、start/end、expected_text；位置按 Unicode 码点，来自当前 contract.json 的 nodes。校验失败不得自动应用 |
+| edit | object | 否 | 旧版位置数据，仅兼容解析；新修改使用 edit_plan.edits，旧定位通过也不满足应用质量条件 |
 
 顶层 V2 可带 `perspective`（mode=neutral/party_a/party_b/custom，focus 与已确认主体）；缺失时读取 review_context 或默认中立。可带 `risk_resolution[]`，复审分类由 WorkBuddy 真实语义分析生成，不能仅凭风险编号未出现认定解决。
 
-例：`"edit":{"node_id":"b0004","kind":"partial","start":0,"end":10,"expected_text":"合同节点内逐字原文"}`。这里的数值只是结构示意，必须从实际节点计算，不能照抄。建议正文仍放 `proposed_clause`；没有该字段时禁止将解释文字自动写入合同。
+旧结构例：`"edit":{"node_id":"b0004","kind":"partial","start":0,"end":10,"expected_text":"合同节点内逐字原文"}`。数值必须从实际节点计算，不能照抄。该结构现在仅兼容展示；新应用必须使用完整edit_plan，解释文字不能自动写入合同。
 
 原有五种 category 保留；企业偏好或谈判建议按具体问题归类（无对应结构缺失/约定不明时用待核实事项），并以 risk_source 清楚区分，禁止把不符合偏好直接标为法律合规风险。HTML 采纳决定以 review_id + risk_id 区分，复审中的新风险编号不会继承旧风险的采纳决定。
+
+## 通用修改计划（增量字段，不改变旧schema_version）
+
+新增风险字段edit_plan：plan_id、risk_id（可保持草稿稳定编号，展示编号仍由父风险重排）、reason、questions、business_terms、edits、required_edit_node_ids、postconditions、amount_records、related_risk_ids、source_revision_basis、condition_changes、semantic_review。来源及上下文由验证器绑定risk_context与source_file_sha256。
+
+每个edits动作包含edit_id、target_node_id、operation（partial/replace/insert_clause/delete_clause）、expected_node_text（完整节点逐字原文）、expected_original（局部动作的原文片段，其他动作的完整节点原文）、replacement_text、dependencies。partial还需Unicode码点start/end。delete_clause的replacement_text为空；insert_clause锚点须为完整段落或表格最后节点。缺条件时draft_pending=true且replacement_text=null，不放占位示例假装正式文本。
+
+questions含id、question、required，可含options、impact；已确认回答包含answer、confirmed及来源说明。business_terms含id、value、confirmed、source；不要自填用户确认。未确认的关键条件需提问。
+
+condition_changes可记录新增/变更条件的node_id、before_quote、after_quote、effect、reason、source和confirmed。合同来源附source_node_id/source_quote；legal_requirement需law_id/article_no并能对应已核验依据。模型应逐一分析实质新增条件，程序不能用关键词替模型判断clarification是否真实。
+
+postconditions是可机械核对的明确文字约束：type=present/absent、node_ids、text。它不能代替语义结论。amount_records在原check_amounts格式上增加node_id、after_quote（修改后完整节点中的逐字片段），只对明确金额及税率作算术，不编造税率。
+
+顶层contract_analysis记录经模型分析的语义edges与obligations，详见quality_workflow.md。semantic_review的十项checks是模型判断，每项有result和reason；必须绑定程序请求的plan_fingerprint、scope_node_hashes，记录reviewer、reviewed_at、checked_node_ids。不要先写pass后找理由。
+
+验证器产出readiness、can_apply、validation、checks、quality_result、blockers、preview_nodes、scope_node_texts、compiled_digest。它们由程序推导，草稿不能自行指定有效状态。整组执行后risk_status_after_apply固定needs_re_review。
 
 ### evidence 元素
 

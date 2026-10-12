@@ -154,6 +154,14 @@ class Acceptance(unittest.TestCase):
         expected=contract_from_nodes(CONTRACT,replay(DOC,value))['full_text']
         self.assertEqual(read(target/'contract.json')['full_text'],expected)
 
+    def test_unfinished_confirmed_text_cannot_export_as_final(self):
+        for index,text in enumerate(['（示例文本）价款为100元。','价款为【金额】元。','付款日为 年 月 日。']):
+            value=revisions();replace(value,'b0004',text);path=TEST/f'unsafe-{index}.json';write(path,value)
+            out=TEST/f'unsafe-{index}.docx';run('apply_docx.py','--original',SOURCE,'--task-dir',TASK,'--revisions',path,'--output',out,ok=False)
+            self.assertFalse(out.exists())
+        value=revisions();replace(value,'b0004','附件仅供参考，货款为100元（人民币壹佰元整）。');path=TEST/'normal-label.json';write(path,value)
+        run('apply_docx.py','--original',SOURCE,'--task-dir',TASK,'--revisions',path,'--output',TEST/'normal-label.docx')
+
     def test_legacy_data_and_injection(self):
         legacy=TEST/'legacy';c=copy.deepcopy(CONTRACT);c.pop('nodes');c.pop('schema_version')
         for block in c['blocks']:

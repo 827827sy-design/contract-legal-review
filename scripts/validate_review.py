@@ -82,7 +82,7 @@ def validate_legal_basis(basis, law_index, kb_complete: dict):
         if a == b:
             out["text_match"] = True
             out["status"] = "verified"
-        elif a and (a in b or b in a):
+        elif a and a in b:
             out["text_match"] = True
             out["status"] = "verified"
             out["note"] = "引用为条文节选，已确认属于该条"
@@ -204,7 +204,7 @@ def risk_signature(r):
     """
     spans = tuple(sorted(tuple(e["span"]) for e in r["evidence"] if e.get("span")))
     basis = tuple(sorted((b["law_id"], b["article_no"]) for b in r["legal_basis"]))
-    return (r["category"], r.get('risk_source','legal'), r.get('preference_id',''), _norm_title(r["title"]), _norm_title(r["conclusion"]), spans, basis)
+    return (r["category"], r.get('risk_source','legal'), r.get('preference_id',''), r.get('edit_plan',{}).get('plan_id',''), _norm_title(r["title"]), _norm_title(r["conclusion"]), spans, basis)
 
 
 def resolve_index_dir(p: str) -> Path:
@@ -375,6 +375,15 @@ def main():
             "has_legal_basis": bool(vr["legal_basis"]),
             "has_evidence": bool(vr["evidence"]),
         }
+        from plan_quality import evaluate_plan,legacy_plan
+        raw_plan=dict(r['edit_plan']) if isinstance(r.get('edit_plan'),dict) else legacy_plan(vr)
+        raw_plan['risk_context']={'title':vr['title'],'conclusion':vr['conclusion'],'explanation':vr['explanation'],
+                                  'evidence':[{'block_id':e.get('block_id',''),'quote':e.get('quote',''),'no_text':e.get('no_text',False)} for e in vr['evidence']],
+                                  'category':vr['category'],'severity':vr['severity'],'risk_source':vr['risk_source'],
+                                  'scope_note':vr['scope_note'],'manual_checks':vr['manual_checks'],
+                                  'perspective':draft.get('perspective',{}),'evidence_verified':all_ev_ok and bool(vr['evidence'])}
+        vr['edit_plan']=evaluate_plan(raw_plan,contract,draft.get('contract_analysis'),vr['legal_basis'])
+        vr['verification_status']['suggestion_quality']=vr['edit_plan']['quality_result']
         verified_risks.append(vr)
 
     # 去重合并：完全相同签名 (category + spans + basis) 合并
@@ -415,6 +424,10 @@ def main():
         if not isinstance(item,dict):
             issues.append('复审分类记录不是对象，需重新提供');continue
         item=dict(item);target=item.get('current_risk_id')
+        if item.get('status')=='resolved':
+            from plan_quality import post_review_valid
+            if not post_review_valid(item,contract):
+                item['status']='needs_confirmation';item['reason']='缺少与当前稿绑定的语义复审，不能把修改插入或风险未再列出认定为已解决。'
         if target in id_map:item['current_risk_id']=id_map[target]
         elif target and target not in {r['risk_id'] for r in final_risks}:
             item['status']='needs_confirmation';item['reason']='当前风险编号不存在，需 WorkBuddy 重新核对映射。'
@@ -446,6 +459,7 @@ def main():
             "review_id":__import__('uuid').uuid4().hex,
             "perspective":draft.get('perspective',read_json(task_dir/'review_context.json').get('perspective') if (task_dir/'review_context.json').exists() else {'mode':'neutral','focus':''}),
             "risk_resolution":resolution,
+            "contract_analysis":draft.get('contract_analysis'),
         },
         "risks": final_risks,
         "risk_id_map": id_map,
@@ -460,6 +474,11 @@ def main():
     write_json(task_dir / args.out, result)
     # 验收规范要求的固定产物名：review_result.json（结构化风险结果）
     write_json(task_dir / "review_result.json", result)
+    write_json(task_dir/'quality_requests.json',{'requires_workbuddy_analysis':True,'requests':[
+        {'risk_id':r['risk_id'],'plan_id':r['edit_plan'].get('plan_id'),'plan_fingerprint':r['edit_plan']['plan_fingerprint'],
+         'scope_node_hashes':{k:__import__('plan_quality').digest(v) for k,v in r['edit_plan']['scope_node_texts'].items()},
+         'raw_plan':r['edit_plan']['raw_plan'],'preview_nodes':r['edit_plan']['preview_nodes'],'blockers':r['edit_plan']['blockers']}
+        for r in final_risks]})
     merge_log(task_dir, "validate_review", {
         "stats": stats, "issue_count": len(issues),
         "final_risk_count": len(final_risks), "kb_notes": kb_notes,
