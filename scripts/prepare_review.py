@@ -34,6 +34,7 @@ def main():
     args = ap.parse_args()
     task = Path(args.task_dir)
     contract = read_json(task / 'contract.json')
+    from knowledge import context as knowledge_context
     prefs = load(args.config_dir)
     context = {'schema_version':2,'created_at':now_iso(),'contract_type':args.contract_type,
                'perspective':{'mode':args.perspective,'focus':args.focus,
@@ -42,6 +43,7 @@ def main():
                'preferences':active_for(prefs,args.contract_type), 'preferences_configured':prefs['configured'],
                'preferences_path':str(config_path(args.config_dir)),
                'legal_invariant':'法律强制要求独立于立场；企业制度、谈判偏好与经验不构成违法依据。'}
+    context['knowledge']=knowledge_context(Path(__file__).resolve().parent.parent/'law_index',args.contract_type)
     if args.new_run:
         import uuid
         new = task / 'review_runs' / uuid.uuid4().hex[:12]

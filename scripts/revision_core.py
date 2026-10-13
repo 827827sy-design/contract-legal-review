@@ -24,7 +24,8 @@ def nodes_for(contract):
                                   'block_start': cursor, 'editable': cell.get('editable', False),
                                   'locator': cell.get('locator'),
                                   'read_only_reason':cell.get('read_only_reason',''),
-                                  'has_existing_revisions':cell.get('has_existing_revisions',False)})
+                                  'has_existing_revisions':cell.get('has_existing_revisions',False),
+                                  'text_controls':cell.get('text_controls',[]),'legacy_layout_tabstop_count':cell.get('legacy_layout_tabstop_count',0)})
                     cursor += len(text) + (3 if ci < len(row)-1 else 0)
                 cursor += 1 if ri < len(block['cells'])-1 else 0
         else:
@@ -34,6 +35,7 @@ def nodes_for(contract):
                           'locator': block.get('locator'),
                           'read_only_reason':block.get('read_only_reason',''),
                           'has_existing_revisions':block.get('has_existing_revisions',False)})
+            nodes[-1].update(style=block.get('style',''),display_kind=block['kind'],alignment=block.get('alignment',''),text_controls=block.get('text_controls',[]),legacy_layout_tabstop_count=block.get('legacy_layout_tabstop_count',0))
     _, offsets = build_full_text(contract['blocks'])
     for node in nodes:
         node['full_start'] = offsets[node['block_id']][0] + node.get('block_start', 0)
@@ -45,6 +47,7 @@ def document_for(contract):
     return {'schema_version': 2,
             'identity': {'file_sha256': contract['file_sha256'], 'content_sha256': sha(full)},
             'source_name': contract['source_name'], 'source_file': contract.get('source_file', ''),
+            'title_guess':contract.get('title_guess',''),
             'original_nodes': nodes}
 
 def replay(document, revision, confirmed_only=False):
@@ -79,6 +82,9 @@ def replay(document, revision, confirmed_only=False):
             raise ValueError('历史修改内容或位置不合法。')
         if before[start:end]!=op.get('removed_text') or before[:start]+inserted+before[end:]!=after:
             raise ValueError('历史修改片段与前后文本不一致。')
+        if historical_nodes.get(op.get('node_id'),{}).get('locator'):
+            from docx_controls import validate_controls
+            validate_controls(before,after)
         if kind=='insert_node':
             if not re.fullmatch(r'n-[A-Za-z0-9_-]+',op.get('node_id','')) or op['node_id'] in historical_nodes or before!='' or op.get('anchor_node_id') not in historical_nodes:
                 raise ValueError('历史新增节点或锚点不合法。')
@@ -100,6 +106,8 @@ def replay(document, revision, confirmed_only=False):
         if group and op['id']==group['operation_ids'][0]:
             from plan_quality import verify_compiled
             verify_compiled(group['snapshot'],{'nodes':nodes,'blocks':[],'file_sha256':document['identity']['file_sha256']})
+            from plan_executor import verify_group_steps
+            verify_group_steps(group,operations,nodes)
         kind = op.get('type')
         if kind == 'insert_node':
             if not re.fullmatch(r'n-[A-Za-z0-9_-]+', op.get('node_id','')) or any(n['node_id']==op['node_id'] for n in nodes):
@@ -140,6 +148,8 @@ def replay(document, revision, confirmed_only=False):
         if group and op['id']==group['operation_ids'][0]:
             from plan_quality import verify_compiled
             verify_compiled(group['snapshot'],{'nodes':future,'blocks':[],'file_sha256':document['identity']['file_sha256']})
+            from plan_executor import verify_group_steps
+            verify_group_steps(group,operations,future)
         if op['type']=='insert_node':
             at=next((i for i,n in enumerate(future) if n['node_id']==op['anchor_node_id']),None)
             if at is None:raise ValueError('已撤销条款的恢复锚点不存在。')

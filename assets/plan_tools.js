@@ -10,7 +10,8 @@ async function verify(plan){
  if(!plan||!plan.can_apply||!Array.isArray(plan.checks)||plan.checks.some(c=>c.result!=='pass'))throw Error('计划未满足系统应用条件，需补充或重新核验。');
  const payload=clone(plan);delete payload.compiled_digest;
  if(await hash(payload)!==plan.compiled_digest)throw Error('计划内容已变化，需返回WorkBuddy重新校验。');
- if(plan.raw_plan?.semantic_review?.plan_fingerprint!==plan.plan_fingerprint)throw Error('语义审查与计划不匹配。');
+ if(plan.raw_plan?.materialization)await ProposalTools.verifyMaterialization(plan);
+ else if(plan.raw_plan?.semantic_review?.plan_fingerprint!==plan.plan_fingerprint)throw Error('语义审查与计划不匹配。');
 }
 function preflight(plan,nodes){
  if(!plan?.can_apply)throw Error('修改计划尚不可应用。');
@@ -35,7 +36,9 @@ function preflight(plan,nodes){
   for(const e of [...edits].sort((a,b)=>b.start-a.start)){const a=cp(after);after=a.slice(0,e.start).join('')+e.replacement_text+a.slice(e.end).join('');}
   if(after===before)throw Error('计划没有产生文字变化。');
   if(!plan.preview_nodes.some(n=>n.node_id===id&&n.before===before&&n.after===after))throw Error('组内执行结果与核验预览不同。');
-  steps.push({kind:'replace',node_id:id,before,after,edit_ids:edits.map(e=>e.edit_id)});
+  if(byId.get(id).locator&&(before.match(/[\t\n]/g)||[]).join('')!==(after.match(/[\t\n]/g)||[]).join(''))throw Error('Tab/换行结构必须保留，可修改其两侧的普通文字。');
+  if(plan.execution_protocol!==2)steps.push({kind:'replace',node_id:id,before,after,start:0,end:cp(before).length,removed:before,inserted:after,edit_ids:edits.map(e=>e.edit_id)});
+  else{let value=before;for(const e of [...edits].sort((a,b)=>b.start-a.start)){const a=cp(value),next=a.slice(0,e.start).join('')+e.replacement_text+a.slice(e.end).join('');steps.push({kind:'replace',node_id:id,before:value,after:next,start:e.start,end:e.end,removed:a.slice(e.start,e.end).join(''),inserted:e.replacement_text,edit_ids:[e.edit_id]});value=next;}}
  }
  if(!steps.length)throw Error('计划缺少执行步骤。');return steps;
 }
@@ -48,8 +51,11 @@ function validateGroups(value){
   const first=ops.indexOf(actual[0]);if(actual.some((o,i)=>ops[first+i]!==o))throw Error('关联修改组记录不连续。');
   if(new Set(actual.map(o=>o.status)).size!==1||new Set(actual.map(o=>o.decision)).size!==1)throw Error('关联修改组不能部分撤销、确认或拒绝。');
   if(!g.snapshot?.can_apply||g.plan_fingerprint!==g.snapshot.plan_fingerprint||g.plan_id!==g.snapshot.plan_id||g.snapshot.source_file_sha256!==value.contract.file_sha256||actual.some(o=>o.plan_id!==g.plan_id))throw Error('关联修改计划快照或原文件不匹配。');
+  if(g.snapshot.proposed_terms?.length&&!equal(g.accepted_negotiation_terms,g.snapshot.proposed_terms))throw Error('推荐谈判条件未获确认');
  }
  if(ops.some(o=>o.group_id&&!groups[o.group_id]))throw Error('关联修改动作缺少整组记录。');
 }
-window.ClausePlanTools={hash,verify,preflight,validateGroups};
+function verifyGroupSteps(group,operations,nodes){const steps=preflight(group.snapshot,nodes),actual=operations.filter(o=>o.group_id===group.group_id);if(actual.length!==steps.length)throw Error('关联组动作数与计划不一致');
+ steps.forEach((s,i)=>{const o=actual[i];if(o.before_text!==s.before||o.after_text!==s.after||!equal(o.edit_ids,s.edit_ids)||(s.kind==='insert'?o.anchor_node_id!==s.anchor:o.node_id!==s.node_id||o.start!==s.start||o.end!==s.end||o.removed_text!==s.removed||o.inserted_text!==s.inserted))throw Error('关联组记录超出核验计划的范围或文字');});}
+window.ClausePlanTools={hash,verify,preflight,validateGroups,verifyGroupSteps};
 })();

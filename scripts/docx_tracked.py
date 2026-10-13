@@ -43,6 +43,7 @@ def visible_runs(paragraph):
             if child.tag==W+'r':
                 value=''.join(t.text or '' for t in child.findall(W+'t'))
                 if value:result.append((parent,child,value))
+                elif any(c.tag in {W+'tab',W+'br',W+'cr'} for c in child):result.append((parent,child,'\t' if child.find(W+'tab') is not None else '\n'))
             else:walk(child)
     walk(paragraph)
     return result
@@ -51,7 +52,20 @@ def replace_tracked(paragraph,before,after,tracker):
     if not paragraph_features(paragraph)['editable']:
         raise ValueError('Word段落结构仍不支持安全修订：'+paragraph_features(paragraph)['read_only_reason'])
     if _docx_paragraph_text(paragraph)!=before:raise ValueError('Word修订段落与解析快照不匹配。')
-    if '\n' in after or '\t' in after:raise ValueError('Word修订写回暂不支持段内换行/制表符变更。')
+    if any(c in before or c in after for c in ['\n','\t']):
+        import re
+        from docx_controls import validate_controls,split_control_runs,insert_at_island
+        validate_controls(before,after);split_control_runs(paragraph)
+        old_parts=re.split('([\t\n])',before);new_parts=re.split('([\t\n])',after);offset=0
+        for index,(old,new) in enumerate(zip(old_parts,new_parts)):
+            if old!=new:
+                value=_docx_paragraph_text(paragraph)
+                if not old:insert_at_island(paragraph,index//2,new,tracker)
+                else:_replace_range(paragraph,offset,offset+len(old),new,tracker)
+                if _docx_paragraph_text(paragraph)!=value[:offset]+new+value[offset+len(old):]:raise ValueError('Word文字片段修订校验失败')
+            offset+=len(new)
+        if _docx_paragraph_text(paragraph)!=after:raise ValueError('Word结构文字修订校验失败')
+        return
     if before==after:return
     start=0
     while start<min(len(before),len(after)) and before[start]==after[start]:start+=1
@@ -59,12 +73,17 @@ def replace_tracked(paragraph,before,after,tracker):
     while tail<min(len(before)-start,len(after)-start) and before[-1-tail]==after[-1-tail]:tail+=1
     end=len(before)-tail
     replacement=after[start:len(after)-tail if tail else len(after)]
+    _replace_range(paragraph,start,end,replacement,tracker)
+    if _docx_paragraph_text(paragraph)!=after:raise ValueError('Word原生修订的当前文字校验失败。')
+
+def _replace_range(paragraph,start,end,replacement,tracker):
     runs=visible_runs(paragraph);offset=0;inserted=False
     for parent,run,value in runs:
         stop=offset+len(value)
-        insert_here=not inserted and offset<=start<=stop
+        control=any(c.tag in {W+'tab',W+'br',W+'cr'} for c in run)
+        insert_here=not inserted and not control and offset<=start<=stop
         lo=max(start,offset);hi=min(end,stop)
-        if hi>lo or insert_here:
+        if not control and (hi>lo or insert_here):
             left=max(0,min(len(value),start-offset));right=max(left,min(len(value),end-offset))
             pieces=[]
             original_pieces=[]
@@ -80,6 +99,5 @@ def replace_tracked(paragraph,before,after,tracker):
             for piece in pieces:parent.insert(index,piece);index+=1
         offset=stop
     if not inserted:
-        if before:raise ValueError('未找到Word修订插入位置。')
+        if _docx_paragraph_text(paragraph):raise ValueError('未找到Word修订插入位置。')
         if replacement:paragraph.append(tracker.wrap('ins',text_run(ET.Element(W+'r'),replacement)))
-    if _docx_paragraph_text(paragraph)!=after:raise ValueError('Word原生修订的当前文字校验失败。')

@@ -1,5 +1,9 @@
 # revisions.json V2
 
+本次仍使用schema_version=2。新组的execution_protocol=2保留局部范围；旧快照按原合并协议校验兼容。plan_groups可记录accepted_negotiation_terms；materialized_plans保存预审字段派生计划；ui_drafts/manual_drafts保留临时输入；candidate_choices按分析ID保存候选选择。草稿和候选选择不属于已应用operations。
+
+导入和Python重放核对组实际步骤与计划快照相同。格式Tab停靠点的旧解析表示可按migrate_revisions.py受控迁移，原文件必须相同、差异可核验且相应节点未改动；涉及关联范围变化时拒绝猜测，保留原记录供WorkBuddy核查。迁移需另存JSON，不冒充旧文件已经更新。
+
 浏览器与 Python 共用的协议。所有偏移均为 **Unicode 码点**，不是 JavaScript UTF-16 下标。操作针对当前节点全文，并校验前文；重复文字不会跨节点搜索。
 
 ```json

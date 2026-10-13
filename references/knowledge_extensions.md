@@ -1,0 +1,13 @@
+# 专业法律资源扩展与时间适用
+
+统一审查及建议质量、专业知识资源、企业偏好、文档执行职责分开。合同类型只选择核查事项和资源，不决定固定风险结论。企业偏好由preferences模块管理，不混入法律资源。
+
+核心三法保留原版本快照。可在law_index/extensions中增加经权威来源核验的JSON，不悄然覆盖现有law_id；不同历史版本使用独立law_id。没有本地扩展资源时，相关专业事项保持待核验，不能凭记忆补法律。
+
+每份扩展资源至少具备law_id、law_name、version、source_url、effective_from/effective_date、必要时effective_to、article_count、articles及topics。articles中条号、no、text应完整逐字来自来源，编号及数量校验；verification包含status、verified_at、content_sha256。content_sha256由knowledge.content_digest(articles)计算。只有status=verified、来源和核验时间具备、散列匹配且条文完整时，引用可以通过资源校验。pending资源可用于了解待核验范围，不能声称依据已经核验。
+
+这些记录证明资源与声明一致，不证明来源真实性或法律判断准确，也不是认证签名。WorkBuddy需实际核验权威全文和版本，记录来源与核验过程；不能自行把pending改成verified以提高可用率。专业审查规范和检查点可放references中，并在SKILL.md路由到相应文件，避免把特定合同的结果写入程序。
+
+prepare_review.py输出知识资源上下文，search_law.py可检索本地扩展；validate_review.py校验完整性和引用，knowledge_context单独记录时间适用提示。日期处于有效期间仍不代表所有事项当然适用；跨期间标记requires_transition_review，由WorkBuddy核查过渡和具体适用规则。日期未知不推断，也不因引用旧法就自动认定错误。合同编号中的年份不是签订日期证据。
+
+本次未新增真实政府采购法、实施条例或地方验收规范全文，未完成实际政府采购合同的专项合规或历史适用审查。原知识库仍是固定快照，不自动更新。

@@ -14,6 +14,8 @@ V2.1 支持继续编辑含普通 Word 插入/删除修订的段落，生成新 W
 
 通用建议质量整改保留现有版本号。WorkBuddy生成正式修改计划及语义关联分析，Python验证位置、原文、条件、冲突、占位、金额和审查记录绑定。缺业务条件或依据时不能应用。多处计划统一预览、确认、执行、撤销和保存；修改成功仍标记待复审。完整流程见 [通用质量工作流](references/quality_workflow.md)。旧建议继续展示，需重新生成计划才能获得新应用保护。
 
+完整可用性整改仍保留2.1：首次审查统一生成多个候选并检查是否遗漏模型核验；已核验候选可本地切换，预审事实字段可受控填写。完善区在所属卡片内，筛选/收起/Escape保留草稿并同步关闭。真实正文Tab/换行可编辑普通文字；格式Tab停靠点不会算进正文。流程及迁移见 [首次生成与便捷修订](references/usability_workflow.md)，法律版本扩展见 [专业知识资源](references/knowledge_extensions.md)。
+
 视角切换与修改后复审需要返回 WorkBuddy 真实重新分析；HTML 提供请求指令。最终 DOCX 由 WorkBuddy 读取原始合同与已确认修订生成新文件；浏览器没有 Word 导出或打印功能。
 
 ## 公开访问与其他 agent
@@ -37,9 +39,13 @@ python -B -X utf8 tests/test_v2.py
 python -B -X utf8 tests/test_tracked.py
 python -B -X utf8 tests/test_plan_quality.py
 python -B -X utf8 tests/test_unseen_quality.py
+python -B -X utf8 tests/test_usability_core.py
+python -B -X utf8 tests/test_usability_holdout.py
 python -B -X utf8 tests/build_quality_fixtures.py
+python -B -X utf8 tests/build_usability_fixtures.py
 # 在已安装 Playwright 的开发环境执行，不需要 @playwright/test
 node tests/browser_v2.cjs
+node tests/browser_usability.cjs
 ```
 
 浏览器测试默认使用 msedge；底层原有测试仍输出FIXTURES和latest-fixtures.txt。通用质量样本、结果与浏览器记录分别在CONTRACT_REVIEW_TEST_DIR的quality-browser、quality-fixture-results.json、quality-browser-results下。语义审查收据是明确的合成测试数据，不代表独立模型或律师评测。

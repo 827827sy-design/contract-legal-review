@@ -37,7 +37,7 @@ W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 def paragraph_features(element):
     labels = {'drawing':'图片或绘图','object':'嵌入对象','fldChar':'Word字段','instrText':'Word字段',
-              'fldSimple':'Word字段','tab':'制表符','br':'段内换行','cr':'段内换行','sdt':'内容控件',
+              'fldSimple':'Word字段','sdt':'内容控件',
               'moveFrom':'移动修订','moveTo':'移动修订','moveFromRangeStart':'移动修订',
               'moveToRangeStart':'移动修订'}
     reasons = sorted({labels[node.tag.split('}')[-1]] for node in element.iter()
@@ -46,9 +46,11 @@ def paragraph_features(element):
         reasons.append('段落结束符删除修订（涉及段落合并）')
     # Only plain text runs can be split without detaching non-text run content.
     for run in element.iter(W+'r'):
-        if run.find(W+'t') is not None and any(c.tag not in {W+'rPr',W+'t'} for c in run):
+        if run.find(W+'t') is not None and any(c.tag not in {W+'rPr',W+'t',W+'tab',W+'br',W+'cr'} for c in run):
             reasons.append('文字与非文字对象位于同一Word片段')
-    allowed={'p','pPr','r','rPr','t','delText','ins','del','hyperlink','proofErr',
+    if any(n.get(W+'type') not in {None,'textWrapping'} for n in element.iter(W+'br')):
+        reasons.append('分页或分栏换行')
+    allowed={'p','pPr','r','rPr','t','tab','br','cr','delText','ins','del','hyperlink','proofErr',
              'bookmarkStart','bookmarkEnd','commentRangeStart','commentRangeEnd',
              'commentReference','permStart','permEnd','footnoteReference','endnoteReference'}
     def inspect(node):
@@ -58,7 +60,15 @@ def paragraph_features(element):
             reasons.append('暂未支持的Word结构：'+local)
         for child in node:inspect(child)
     inspect(element)
+    controls=[]
+    def control_walk(node):
+        if node.tag in {W+'pPr',W+'rPr',W+'del',W+'moveFrom'}:return
+        if node.tag in {W+'tab',W+'br',W+'cr'}:controls.append({'kind':node.tag.split('}')[-1],'attributes':dict(node.attrib)})
+        for child in node:control_walk(child)
+    control_walk(element)
     return {'editable':not reasons,'read_only_reason':'、'.join(sorted(set(reasons))),
+            'text_controls':controls,
+            'legacy_layout_tabstop_count':len(element.findall(f'{W}pPr/{W}tabs/{W}tab')),
             'has_existing_revisions':any(n.tag in {W+'ins',W+'del',W+'rPrChange',W+'pPrChange'} for n in element.iter())}
 
 def editable_paragraph(element):
@@ -70,7 +80,7 @@ def editable_paragraph(element):
 def _docx_paragraph_text(p_el) -> str:
     texts = []
     def visible(node):
-        if node.tag in {W+'del',W+'moveFrom'}:
+        if node.tag in {W+'del',W+'moveFrom',W+'pPr',W+'rPr'}:
             return
         tag = node.tag
         if tag == f"{W}t":
@@ -92,6 +102,18 @@ def _para_style(p_el) -> str:
         if st is not None:
             return st.get(f"{W}val", "") or ""
     return ""
+def paragraph_format(p_el):
+    visible=[]
+    def walk(node):
+        if node.tag in {W+'del',W+'moveFrom',W+'pPr',W+'rPr'}:return
+        if node.tag==W+'r':
+            text=''.join(t.text or '' for t in node.findall(W+'t'));props=node.find(W+'rPr')
+            bold=props.find(W+'b') if props is not None else None
+            if text.strip():visible.append((len(text),bold is not None and bold.get(W+'val') not in {'0','false','off'}))
+        for child in node:walk(child)
+    walk(p_el);outline=p_el.find(f'{W}pPr/{W}outlineLvl')
+    value=outline.get(W+'val','') if outline is not None else ''
+    return {'format_bold':bool(visible) and all(b for _,b in visible),'outline_level':int(value) if value.isdigit() else None}
 
 
 def extract_docx(path: Path):
@@ -111,10 +133,12 @@ def extract_docx(path: Path):
             if el.tag == f"{W}p":
                 txt = _docx_paragraph_text(el)
                 style = _para_style(el)
+                formatting=paragraph_format(el)
                 kind = "heading" if (style.lower().startswith("heading")
                                      or style.startswith("标题")
-                                     or style in ("Title", "Subtitle")) else "para"
-                blocks.append({"kind": kind, "text": txt, "style": style,
+                                     or style in ("Title", "Subtitle") or formatting['outline_level'] is not None and formatting['outline_level']<9 or formatting['format_bold'] and len(txt.strip())<=60 and '\n' not in txt) else "para"
+                align=el.find(f'{W}pPr/{W}jc')
+                blocks.append({"kind": kind, "text": txt, "style": style,**formatting,"alignment":align.get(W+'val','') if align is not None else '',
                                **paragraph_features(el),
                                "locator": {"body_index":body_index,"kind":"paragraph"}})
             elif el.tag == f"{W}tbl":
@@ -122,10 +146,7 @@ def extract_docx(path: Path):
                 for row_index, tr in enumerate(el.findall(f"{W}tr")):
                     cells, structured_row = [], []
                     for col_index, tc in enumerate(tr.findall(f"{W}tc")):
-                        cell = " ".join(
-                            _docx_paragraph_text(p)
-                            for p in tc.findall(f"{W}p")
-                        ).strip()
+                        cell = "\n".join(_docx_paragraph_text(p) for p in tc.findall(f"{W}p"))
                         cells.append(cell)
                         paragraphs = tc.findall(f"{W}p")
                         safe = (len(paragraphs)==1 and editable_paragraph(paragraphs[0]) and
@@ -285,7 +306,7 @@ def main():
             "text": txt,
             **({"style": b["style"]} if b.get("style") else {}),
             **({"page": b["page"]} if b.get("page") else {}),
-            **{k:b[k] for k in ('cells','locator','editable','read_only_reason','has_existing_revisions') if k in b},
+            **{k:b[k] for k in ('cells','locator','editable','read_only_reason','has_existing_revisions','alignment','format_bold','outline_level','text_controls','legacy_layout_tabstop_count') if k in b},
         })
     blocks = cleaned
 

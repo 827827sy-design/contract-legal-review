@@ -114,7 +114,7 @@ mark.search-hit{color:inherit;background:#dbeafe;border-radius:2px}.search-hit.s
 .suggestion-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.suggestion-actions .btn{font-size:11px;padding:7px 9px}.risk-origin{font-size:11px;color:#8a5a17;margin-bottom:9px}.editor-message{font-size:11px;color:#456383;line-height:1.7;max-width:100%;padding:5px 0}.editor-message.error{color:#a2233a}
 .handoff,.completion{background:#f5f8ff;border:1px solid #dce7fa;border-radius:8px;padding:12px;margin:8px 0;font-size:12px}.handoff textarea{width:100%;min-height:100px;resize:vertical}.history-list{max-height:150px;overflow:auto;font-size:11px;color:var(--muted);padding-left:20px}.history-list li{padding:4px 0}
 [hidden]{display:none!important}.file-label input{max-width:200px;font-size:11px}.clause{border-left:1px solid #A7F3D0}
-.plan-preview{background:#ECFDF5;border-top:1px solid #A7F3D0;padding:16px;max-height:65vh;overflow:auto;font-size:12px;line-height:1.65}.plan-preview h3{font-size:15px}.plan-preview details{margin:12px 0;padding-bottom:10px;border-bottom:1px solid #c7ddd4}.plan-preview pre,.plan-diff{white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;background:#f7fcf9;color:#24352e}.plan-preview label,.plan-preview label small{display:block}.plan-preview textarea{width:100%;min-height:65px}.plan-diff del{background:#fee2e2;color:#991b1b}.plan-diff ins{background:#d1fae5;color:#065f46}.plan-error{color:#991b1b}
+.plan-preview{background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:14px;margin:14px 0;font-size:12px;line-height:1.65}.plan-preview h3{font-size:15px}.plan-preview details{margin:12px 0;padding-bottom:10px;border-bottom:1px solid #c7ddd4}.plan-preview pre,.plan-diff{white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;background:#f7fcf9;color:#24352e;max-height:240px;overflow:auto}.plan-preview label,.plan-preview label small{display:block}.plan-preview textarea{width:100%;min-height:65px;font:inherit}.plan-diff del{background:#fee2e2;color:#991b1b}.plan-diff ins{background:#d1fae5;color:#065f46}.plan-error{color:#991b1b}.plan-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.plan-preview select{max-width:100%;padding:7px;font:inherit}.completion{margin:0;padding:7px 26px;border-radius:0;max-height:160px;overflow:auto}.completion p{margin:3px 0}.completion .handoff{margin:4px 0}.blk{white-space:pre-wrap;tab-size:4}.clause>.body{max-height:240px;overflow:auto;overflow-wrap:anywhere}
 @media(max-width:760px){.workflow-tools{padding:8px 14px}.editing-toolbar{padding:8px 10px}.edit-form{padding:10px;max-height:45vh}.workflow-row{align-items:flex-start}.topline .actions{flex-wrap:wrap}.save-state{font-size:10px}}
 
 </style>
@@ -138,8 +138,8 @@ mark.search-hit{color:inherit;background:#dbeafe;border-radius:2px}.search-hit.s
   <div class="workflow-row"><button class="btn" id="saveNative">选择文件并写入</button><label class="file-label">导入修订 JSON <input type="file" id="importRevisions" accept=".json,application/json"></label><button class="btn" id="confirmDownload" hidden>确认文件已保存</button><button class="btn" id="confirmEdits">确认当前有效修改</button><button class="btn" id="restoreOriginal">恢复原始内容</button></div>
   <p id="cacheNotice" class="editor-message">临时恢复不能代替主动保存 JSON。下载后请检查文件是否落盘。</p><button class="btn" id="restoreCache" hidden>恢复浏览器临时记录</button>
   <details><summary>查看修改历史 <span id="revisionCount">0 项有效修改</span></summary><ol id="historyList" class="history-list"></ol></details>
-  <div class="completion" id="completion" hidden><strong>编辑交接</strong><p id="completionText"></p><ul id="completionList"></ul></div>
-  <div class="handoff" id="handoffPanel" hidden><label for="handoffText">返回 WorkBuddy 后使用以下指令</label><textarea id="handoffText" readonly></textarea><button class="btn" id="copyHandoff">复制 WorkBuddy 指令</button></div>
+  <div class="completion" id="completion" hidden><strong>编辑交接</strong><p id="completionText"></p><button class="btn" id="copyCompletionHandoff">复制交接指令</button><details><summary>查看有效修改</summary><ul id="completionList"></ul></details></div>
+  <details class="handoff" id="handoffPanel" hidden><summary>返回 WorkBuddy 的指令</summary><textarea id="handoffText" aria-label="交接指令" readonly></textarea><button class="btn" id="copyHandoff">复制 WorkBuddy 指令</button></details>
  </details>
  <div id="editorStatus" class="editor-message" role="status" aria-live="polite">当前风险基于本次审查快照；编辑后须重新核实。</div>
 </header>
@@ -147,7 +147,7 @@ mark.search-hit{color:inherit;background:#dbeafe;border-radius:2px}.search-hit.s
  <section class="panel document-panel" aria-label="合同原文">
   <div class="panel-head"><div class="panel-title">合同工作稿 <small>原始文件保留，修改独立记录</small></div></div>
   <div class="editing-toolbar"><label><input id="editEnabled" type="checkbox">开启正文编辑</label><label>显示 <select id="displayMode"><option value="revision">修订模式</option><option value="clean">清洁模式</option></select></label><button class="btn" id="insertClause">插入新条款</button><button class="btn" id="undoBtn" disabled>撤销</button><button class="btn" id="redoBtn" disabled>恢复</button></div>
-  <section class="edit-form" id="editPanel" aria-label="编辑选中条款" hidden><label>目标节点<select id="targetNode" aria-label="目标节点"></select></label><label>操作<select id="editMode"><option value="replace">替换整个节点文字</option><option value="partial">替换已核验局部文字</option><option value="insert">在该段落或表格后插入新条款</option></select></label><pre id="editBefore"></pre><label>修改后文字<textarea id="editText"></textarea></label><label>修改原因<textarea id="editReason" rows="1"></textarea></label><button class="btn primary" id="applyEdit">确认应用</button> <button class="btn" id="cancelEdit">取消</button></section>
+  <section class="edit-form" id="editPanel" aria-label="编辑选中条款" hidden><label>目标段落<select id="targetNode" aria-label="目标段落"></select></label><label>操作<select id="editMode"><option value="replace">替换整段文字</option><option value="partial">替换选定文字片段</option><option value="insert">在该段落或表格后插入新条款</option></select></label><div id="partialLocator" hidden><label>要替换的原文片段<textarea id="partialOriginal" rows="1"></textarea></label><label>选择匹配位置<select id="partialMatch"></select></label></div><pre id="editBefore"></pre><label>修改后文字<textarea id="editText"></textarea></label><label>修改原因<textarea id="editReason" rows="1"></textarea></label><button class="btn primary" id="applyEdit">确认应用</button> <button class="btn" id="cancelEdit">取消</button></section>
   <div class="search-row"><input type="search" id="docSearch" aria-label="搜索合同原文" placeholder="搜索原文关键词…"><span class="search-count" id="docSearchCount"></span><button class="btn" id="prevHit" aria-label="上一处匹配">上一处</button><button class="btn" id="nextHit" aria-label="下一处匹配">下一处</button></div>
   <div class="doc-scroll" id="left"><article class="paper" id="contractRoot">__CONTRACT_HTML__<div id="contractEnd" class="blk" aria-label="合同末尾建议插入位置"></div></article></div>
   <div class="doc-footer"><span id="locStatus" role="status" aria-live="polite">选择右侧风险，即可定位原文</span><span class="legend"><span class="legend-label">当前定位</span></span></div>
@@ -160,7 +160,7 @@ mark.search-hit{color:inherit;background:#dbeafe;border-radius:2px}.search-hit.s
    <div class="results-meta"><span id="resultCount"></span><button class="text-btn" id="resetFilters">重置筛选</button></div>
   </div>
   <div class="risk-scroll" id="riskList"></div>
-  <section id="planPanel" class="plan-preview" hidden tabindex="-1" aria-label="统一修改计划预览"><h3 id="planTitle"></h3><p id="planState"></p><div id="planWarnings"></div><div id="planRows"></div><p id="planImpacts"></p><div id="planQuestions"></div><button class="btn" id="savePlanDraft">保存条件为待完善草稿</button> <button class="btn" id="requestPlanReview">生成重新核验请求</button> <button class="btn primary" id="applyPlan">确认整组应用</button> <button class="btn" id="closePlan">关闭预览</button><p>通过系统可执行性检查不代表律师认可或效力保证。应用后风险保持待复审。</p></section>
+  <div id="planParking" hidden><section id="planPanel" class="plan-preview" hidden tabindex="-1" aria-label="修改方案"><h3 id="planTitle"></h3><p id="planState"></p><label id="candidateLabel" hidden>选择备选方案<select id="candidateSelect"></select></label><details><summary>核验及需确认事项</summary><div id="planWarnings"></div><p id="planImpacts"></p></details><div id="planRows"></div><div id="planQuestions"></div><p id="draftProgress"></p><label id="fieldConfirmLabel" hidden><input type="checkbox" id="fieldConfirm">我确认所填字段是已经核实的事实</label><details id="clauseDraftEditor"><summary>修改草案</summary><label>自由改写需重新核验，保存草案不会改动合同<textarea id="clauseDraftText"></textarea></label></details><div class="plan-actions"><button class="btn" id="savePlanDraft">保存草稿</button><button class="btn" id="requestPlanReview">提交完善并请求核验</button><button class="btn" id="previewFields" hidden>填入并预览</button><button class="btn primary" id="applyPlan">预览并应用</button><button class="btn" id="closePlan">关闭</button></div><p>应用后风险保持待复审；自由改变实质条件需要重新核验。</p></section></div>
   <div class="risk-footer">中立审查 · 法律合规与条款完整性 · 建议条款需结合事实确认</div>
  </aside>
 </main>
@@ -184,7 +184,7 @@ function evidenceIndex(e,j){return Number.isInteger(e.i)&&e.i>=0?e.i:j}
 function marksFor(r,i){return validId(r.risk_id)?Array.from(document.getElementsByClassName('m-'+r.risk_id+'-'+i)):[]}
 function blockFor(id){return Array.from($('#contractRoot').querySelectorAll('[data-bid]')).find(e=>e.dataset.bid===String(id))}
 function clearLocation(){document.querySelectorAll('.mk-active,.mk-current,.anchor-current').forEach(e=>e.classList.remove('mk-active','mk-current','anchor-current'));document.querySelectorAll('.card.selected').forEach(e=>e.classList.remove('selected'))}
-function locate(r,j=0){
+function locate(r,j=0,scroll=true){
  clearLocation();state.selected=r.risk_id;state.evidence=j;
  const card=document.getElementById('card-'+r.risk_id);if(card)card.classList.add('selected');
  document.querySelectorAll('.ev-btn').forEach(b=>b.classList.toggle('active',b.dataset.risk===r.risk_id&&Number(b.dataset.evidence)===j));
@@ -193,16 +193,17 @@ function locate(r,j=0){
  if(!ev){$('#locStatus').textContent=r.risk_id+' · 无直接原文';return}
  const marks=ev.has_span?marksFor(r,evidenceIndex(ev,j)):[];
  evidence.forEach((e,k)=>{if(e.has_span)marksFor(r,evidenceIndex(e,k)).forEach(n=>n.classList.add('mk-active'))});
- if(marks.length){marks.forEach(n=>n.classList.add('mk-current'));marks[0].scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});$('#locStatus').textContent=r.risk_id+' · 证据 '+(j+1)+'/'+evidence.length+' · '+(ev.pos_desc||'已定位原文');return}
+ if(marks.length){marks.forEach(n=>n.classList.add('mk-current'));if(scroll)marks[0].scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});$('#locStatus').textContent=r.risk_id+' · 证据 '+(j+1)+'/'+evidence.length+' · '+(ev.pos_desc||'已定位原文');return}
  const anchor=ev.no_text?(ev.block_id?blockFor(ev.block_id):$('#contractEnd')):null;
- if(anchor){anchor.classList.add('anchor-current');anchor.scrollIntoView({behavior:'smooth',block:'center'});$('#locStatus').textContent=r.risk_id+' · 无直接原文，已定位建议插入位置';return}
+ if(anchor){anchor.classList.add('anchor-current');if(scroll)anchor.scrollIntoView({behavior:'smooth',block:'center'});$('#locStatus').textContent=r.risk_id+' · 无直接原文，已定位建议插入位置';return}
  $('#locStatus').textContent=r.risk_id+(ev.no_text?' · 无直接原文；未指定插入位置':' · 定位失败，未匹配到已验证的原文片段');
 }
 function evidenceView(e){return (e.quote?'<div class="ev">'+esc(e.quote)+'</div>':'')+'<div class="ev-note">'+esc(e.no_text?'无直接原文'+(e.block_id?' · 仅定位建议插入位置':''):e.pos_desc||'定位信息未提供')+(e.note?' · '+esc(e.note):'')+'</div>'}
+function displayFields(text,plan){let value=String(text??'');for(const f of plan?.field_bindings||[])value=value.split('{{field:'+f.id+'}}').join('〈待填：'+(f.label||({date:'已核实日期',decimal:'已确认数字',short_text:'已核实信息'}[f.kind])||'必要信息')+'〉');return value;}
 function cardHTML(r){
  const evidence=Array.isArray(r.evidence)?r.evidence:[],basis=Array.isArray(r.legal_basis)?r.legal_basis:[];
  const checks=Array.isArray(r.manual_checks)?r.manual_checks:[];
- const plan=r.edit_plan,clause=String(plan?(plan.legacy_display_text??[...(plan.preview_nodes||[]).map(n=>n.after),(plan.edits||[]).filter(e=>e.operation==='insert_clause').map(e=>e.replacement_text||'').join('\n')].filter(Boolean).join('\n\n')):r.proposed_clause??'').trim(),recommendation=String(r.recommendation??'').trim();
+ const plan=r.edit_plan,clause=displayFields(plan?(plan.legacy_display_text??[...(plan.preview_nodes||[]).map(n=>n.after),(plan.edits||[]).filter(e=>e.operation==='insert_clause').map(e=>e.replacement_text||'').join('\n')].filter(Boolean).join('\n\n')):r.proposed_clause??'',plan).trim(),recommendation=String(r.recommendation??'').trim();
  const status=typeof r.verification_status==='object'?r.verification_status?.overall:r.verification_status;
  const sev=Object.hasOwn(labels,r.severity)?r.severity:'review_required';
  return '<details class="card" id="card-'+esc(r.risk_id)+'" data-risk="'+esc(r.risk_id)+'">'+
@@ -217,14 +218,14 @@ function cardHTML(r){
  '<div class="verification">'+esc(vlabels[status]||'核验状态未提供')+(DATA.meta?.template_demo?' · 本模板未重新核验':'')+'</div></details>'+
  (checks.length||r.scope_note?'<details class="subdetails"><summary>人工核实与范围说明</summary><ul class="manual">'+checks.map(c=>'<li>'+esc(c)+'</li>').join('')+'</ul>'+(r.scope_note?'<p>'+esc(r.scope_note)+'</p>':'')+'</details>':'')+'</div></details>';
 }
-function visibleRisks(){const q=state.query.toLocaleLowerCase();return risks.filter(r=>(!state.severity||r.severity===state.severity)&&(!state.category||r.category===state.category)&&(!q||[r.title,r.conclusion,r.explanation,r.recommendation,r.proposed_clause,r.risk_id].join(' ').toLocaleLowerCase().includes(q)))}
+function visibleRisks(){const q=state.query.toLocaleLowerCase();return risks.filter(r=>(!state.severity||r.severity===state.severity)&&(!state.category||r.category===state.category)&&(!q||[r.title,r.conclusion,r.explanation,r.recommendation,r.proposed_clause,r.risk_id,...(r.edit_plans||[r.edit_plan]).filter(Boolean).flatMap(p=>[p.label,p.reason,...(p.edits||[]).map(e=>e.replacement_text),...(p.questions||[]).map(q=>q.question)])].join(' ').toLocaleLowerCase().includes(q)))}
 function renderCards(){
  const opened=new Set(Array.from(document.querySelectorAll('.card[open]')).map(e=>e.dataset.risk));
  const result=visibleRisks();$('#riskList').innerHTML=result.length?result.map(cardHTML).join(''):'<div class="empty">没有匹配的风险项<br>试试更换关键词或重置筛选</div>';
  $('#resultCount').textContent='显示 '+result.length+' / '+risks.length+' 项';
- document.querySelectorAll('.card').forEach(card=>{card.open=opened.has(card.dataset.risk);card.addEventListener('toggle',()=>{if(!card.isConnected)return;if(card.open){const r=risks.find(r=>r.risk_id===card.dataset.risk);locate(r,state.selected===r.risk_id?state.evidence:0)}else if(state.selected===card.dataset.risk){clearLocation();state.selected=null;$('#locStatus').textContent='选择右侧风险，即可定位原文'}})});
+ document.querySelectorAll('.card').forEach(card=>{card.open=opened.has(card.dataset.risk);card.addEventListener('toggle',()=>{if(!card.isConnected)return;if(!card.open&&state.selected===card.dataset.risk){clearLocation();state.selected=null;$('#locStatus').textContent='选择右侧风险，即可定位原文'}})});
  if(state.selected&&!result.some(r=>r.risk_id===state.selected)){clearLocation();state.selected=null;$('#locStatus').textContent='当前风险已被筛选隐藏'}
- else if(state.selected){const r=risks.find(r=>r.risk_id===state.selected);locate(r,state.evidence)}
+ else if(state.selected){document.getElementById('card-'+state.selected)?.classList.add('selected')}
 }
 function buildFilters(){
  const entries=[['','全部',risks.length],...Object.entries(labels).map(([k,v])=>[k,v,risks.filter(r=>r.severity===k).length])];

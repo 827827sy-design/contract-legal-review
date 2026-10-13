@@ -15,7 +15,16 @@ for(const r of risks)for(const e of r.evidence||[]){if(e.no_text||!e.has_span||!
 const names={neutral:'中立',party_a:'甲方',party_b:'乙方',custom:'自定义'};
 let model={schema_version:2,contract:clone(doc.identity),base_nodes:base,operations:[],history:[],redo_stack:[],risk_decisions:{},perspective:clone(DATA.meta.perspective||{mode:'neutral',focus:''})};
 let current=clone(original),savedSnapshot=null,pendingDownload=null,fileHandle=null,editDraft=null,selectedNode=null,dirty=false;
-let planSelection=null,planBusy=false;
+let planSelection=null,planBusy=false,completedSnapshot=null,savePhase='unsaved';
+const ui={kind:null,risk:null,returnFocus:null};
+$('#workflowTools').after($('#completion'));$('#completion').append($('#handoffPanel'));
+$('#downloadRevisions').after($('#confirmDownload'));$('.editing-toolbar').append($('#confirmEdits'));
+const hasRecords=()=>Boolean(model.operations.length||model.history.length||Object.keys(model.risk_decisions).length||Object.keys(model.ui_drafts||{}).length||Object.keys(model.plan_drafts||{}).length||Object.keys(model.manual_drafts||{}).length);
+function proposalDraftText(p){return displayFields([...p.preview_nodes.map(n=>n.after),...p.edits.filter(e=>e.operation==='insert_clause').map(e=>e.replacement_text)].join('\n\n'),p);}
+function rememberPlan(){const p=planSelection?.edit_plan;if(!p||$('#planPanel').hidden)return;const answers=Object.fromEntries([...$('#planQuestions').querySelectorAll('[data-plan-question]')].map(e=>[e.dataset.planQuestion,e.value])),text=$('#clauseDraftText').value,initial=Object.fromEntries((p.questions||[]).map(q=>[q.id,String(q.answer||'')])),initialText=proposalDraftText(p);if(equal(answers,initial)&&text===initialText){if(model.ui_drafts)delete model.ui_drafts[p.plan_id];return;}model.ui_drafts??={};model.ui_drafts[p.plan_id]={plan_fingerprint:p.plan_fingerprint,answers,draft_text:text};}
+function closePlan(focus=true){rememberPlan();const panel=$('#planPanel');panel.hidden=true;$('#planParking').append(panel);planSelection=null;ui.kind=null;ui.risk=null;persist();updateStatus();if(focus){const target=ui.returnFocus?.isConnected?ui.returnFocus:$('#collapseAll');target.focus({preventScroll:true});}}
+function closeManual(){if(editDraft){const mode=$('#editMode').value,text=$('#editText').value,changed=mode==='insert'?Boolean(text.trim()):mode==='partial'?Boolean($('#partialOriginal').value||text):text!==editDraft.before_text;if(changed){model.manual_drafts??={};model.manual_drafts[editDraft.node_id]={text,mode,reason:$('#editReason').value,fragment:$('#partialOriginal').value,start:editDraft.start};}else if(model.manual_drafts){delete model.manual_drafts[editDraft.node_id];if(!Object.keys(model.manual_drafts).length)delete model.manual_drafts;}}$('#editPanel').hidden=true;$('#partialLocator').hidden=true;editDraft=null;if(ui.kind==='manual')ui.kind=null;persist();updateStatus();}
+
 const cacheKey='contract-review-v2:'+doc.identity.file_sha256+':'+doc.identity.content_sha256;
 const event=(action,detail={})=>model.history.push({time:new Date().toISOString(),action,...detail});
 const revision=()=>({...clone(model),current_nodes:Object.fromEntries(current.map(n=>[n.node_id,n.text]))});
@@ -38,7 +47,7 @@ function replay(value) {
   }else if(!['insert','delete','replace'].includes(op.type)||!historical.get(op.node_id)?.editable)throw Error('历史节点不可编辑或类型不合法。');
   if(op.status==='undone'){seenUndone=true;undone.push(op.id);}else if(op.status==='active'&&seenUndone)throw Error('恢复分支与有效操作顺序冲突。');
   if(op.status!=='active'||op.decision==='rejected')continue;
-  const group=value.plan_groups?.[op.group_id];if(group&&op.id===group.operation_ids[0])ClausePlanTools.preflight(group.snapshot,nodes);
+  const group=value.plan_groups?.[op.group_id];if(group&&op.id===group.operation_ids[0])ClausePlanTools.verifyGroupSteps(group,value.operations,nodes);
   if(op.type==='insert_node') {
    const index=nodes.findIndex(n=>n.node_id===op.anchor_node_id);
    if(index<0||!/^n-[A-Za-z0-9_-]+$/.test(op.node_id)||nodes.some(n=>n.node_id===op.node_id)||op.before_text!==''||typeof op.after_text!=='string'||(nodes[index+1]&&nodes[index+1].block_id===nodes[index].block_id))throw Error('新增条款锚点不可靠。');
@@ -57,29 +66,42 @@ function replay(value) {
  if(!equal(value.redo_stack,[...undone].reverse()))throw Error('恢复栈与已撤销历史不一致。');
  const future=clone(nodes);
  for(const op of value.operations.filter(o=>o.status==='undone')){
+  const group=value.plan_groups?.[op.group_id];if(group&&op.id===group.operation_ids[0])ClausePlanTools.verifyGroupSteps(group,value.operations,future);
   if(op.type==='insert_node'){const at=future.findIndex(n=>n.node_id===op.anchor_node_id);if(at<0)throw Error('已撤销条款的恢复锚点不存在。');future.splice(at+1,0,{node_id:op.node_id,block_id:op.node_id,kind:'paragraph',text:op.after_text,editable:true});}
   else{const node=future.find(n=>n.node_id===op.node_id);if(!node||node.text!==op.before_text)throw Error('已撤销操作的前文无法连续恢复。');node.text=op.after_text;}
  }
  return nodes;
 }
 function restore(value,fromFile=false) {
+ closePlan(false);closeManual();
  const nodes=replay(value);model=clone(value);delete model.current_nodes;current=nodes;
- savedSnapshot=fromFile?serialized():null;pendingDownload=null;editDraft=null;
+ savedSnapshot=fromFile?serialized():null;savePhase=fromFile?'imported':'dirty';pendingDownload=null;editDraft=null;
  persist();renderDocument();renderCards();updateStatus();
+}
+function migrateLegacy(value){
+ if(equal(value.contract,doc.identity))return {value,migrated:false};if(value.contract?.file_sha256!==doc.identity.file_sha256)throw Error('修订文件与当前原合同不匹配');
+ const next=clone(value),changes={};if(!equal(Object.keys(next.base_nodes||{}).sort(),Object.keys(base).sort()))throw Error('旧修订节点集合不匹配');
+ for(const n of original){const old=next.base_nodes[n.node_id];if(old===n.text)continue;const count=n.legacy_layout_tabstop_count||0;if(!count||old!=='\t'.repeat(count)+n.text||next.current_nodes?.[n.node_id]!==old||next.operations.some(o=>o.node_id===n.node_id))throw Error('旧原文差异或操作不能可靠迁移，请保留旧记录并交给WorkBuddy核验');changes[n.node_id]=n.text;}
+ if(!Object.keys(changes).length)throw Error('没有可验证的解析表示迁移');for(const g of Object.values(next.plan_groups||{}))if(Object.keys(g.snapshot.scope_node_texts||{}).some(id=>Object.hasOwn(changes,id)))throw Error('旧关联计划范围需重新核验，原记录已保留');
+ next.contract=clone(doc.identity);Object.assign(next.base_nodes,changes);Object.assign(next.current_nodes,changes);next.history.push({action:'migrate_layout_tab_representation',changed_nodes:Object.keys(changes),time:new Date().toISOString(),semantic_review_performed:false});return {value:next,migrated:true};
 }
 function persist() {
  try{localStorage.setItem(cacheKey,JSON.stringify(revision()));}catch{$('#cacheNotice').textContent='浏览器临时恢复不可用，请主动保存修订 JSON。';}
- dirty=Boolean(model.operations.length||model.history.length||Object.keys(model.risk_decisions).length)&&serialized()!==savedSnapshot;
+ dirty=hasRecords()&&serialized()!==savedSnapshot;
+ if(completedSnapshot&&completedSnapshot!==serialized()){$('#completionText').textContent='又有修改或草稿变更，之前的完成状态已失效。请保存最新记录。';completedSnapshot=null;}
 }
 function status(message,error=false){const el=$('#editorStatus');el.textContent=message;el.classList.toggle('error',error);}
 function updateStatus(){
- dirty=Boolean(model.operations.length||model.history.length||Object.keys(model.risk_decisions).length)&&serialized()!==savedSnapshot;
- $('#saveState').textContent=dirty?'有未保存记录':!model.operations.length&&!model.history.length?'尚无修改':fileHandle?'已写入所选文件':'修订文件已导入或用户已确认下载';
+ dirty=hasRecords()&&serialized()!==savedSnapshot;
+ if(completedSnapshot&&completedSnapshot!==serialized()){$('#completionText').textContent='又有修改或草稿变更，之前的完成状态已失效。请保存最新记录。';completedSnapshot=null;}
+ if(dirty&&savePhase!=='failed')savePhase=pendingDownload===serialized()?'download_started':'dirty';
+ $('#saveState').textContent=({unsaved:'尚未保存',dirty:'已修改待保存',download_started:'已发起JSON下载，待确认',user_confirmed:'用户声明已保存',file_written:'文件接口确认写入成功',failed:'保存失败',imported:'修订文件已导入'})[savePhase];
  $('#undoBtn').disabled=!model.operations.some(o=>o.status==='active');
  $('#redoBtn').disabled=!model.redo_stack.length;
  $('#revisionCount').textContent=model.operations.filter(o=>o.status==='active').length+' 项有效修改';
  $('#restoreOriginal').disabled=!model.operations.some(o=>o.status==='active');
  renderHistory();
+ $('#completionList').innerHTML=model.operations.filter(o=>o.status==='active').map(o=>'<li>'+esc(o.reason||'文字修改')+' · '+(o.decision==='confirmed'?'已确认':'待确认')+'</li>').join('');
 }
 function invalidate(){persist();renderDocument();renderCards();updateStatus();}
 function nodeChanged(n){return reviewById[n.node_id]?.text!==n.text;}
@@ -87,8 +109,26 @@ function riskStale(r){if(r.edit_plan&&Object.entries(r.edit_plan.scope_node_text
  const lo=e.span?.[0],hi=e.span?.[1];
  return reviewNodes.filter(n=>e.block_id===n.block_id||(lo!==undefined&&n.full_start<hi&&n.full_start+cp(n.text).length>lo)).some(n=>current.find(x=>x.node_id===n.node_id)?.text!==n.text);
  });}
+function mapSpans(before,after,marks){
+ let old=0,now=0;const ranges=[];
+ for(const part of diffSegments(before,after)){const len=cp(part.text).length;if(part.type==='same'){ranges.push({lo:old,hi:old+len,next:now});old+=len;now+=len;}else if(part.type==='delete')old+=len;else now+=len;}
+ return marks.flatMap(m=>{const range=ranges.find(x=>x.lo<=m.start&&x.hi>=m.end);if(!range)return [];const quote=cp(before).slice(m.start,m.end).join('');const boundary=range.lo===0||range.hi===cp(before).length;const occurrences=text=>text.split(quote).length-1;if(!boundary&&quote&&(occurrences(before)!==1||occurrences(after)!==1))return [];return [{...m,start:range.next+m.start-range.lo,end:range.next+m.end-range.lo}];});
+}
+function mappedMarks(n){
+ const marks=marksByNode.get(n.node_id)||[],before=reviewById[n.node_id]?.text;if(before===n.text)return marks;if(before===undefined)return [];
+ const operations=model.operations.filter(o=>o.node_id===n.node_id&&o.status==='active'&&o.decision!=='rejected'&&o.type!=='insert_node'),states=[base[n.node_id]];
+ for(const op of operations)states.push(op.after_text);const start=states.lastIndexOf(before);
+ if(start<0||states.at(-1)!==n.text)return mapSpans(before,n.text,marks);
+ let mapped=marks;
+ for(const op of operations.slice(start)){
+  const shift=cp(op.inserted_text).length-(op.end-op.start),outside=[],overlap=[];
+  for(const m of mapped){if(op.end<=m.start)outside.push({...m,start:m.start+shift,end:m.end+shift});else if(op.start>=m.end)outside.push(m);else overlap.push(m);}
+  mapped=[...outside,...mapSpans(op.before_text,op.after_text,overlap)];
+ }
+ return mapped;
+}
 function currentMarkup(n,lo,hi){
- const b=cp(n.text),marks=nodeChanged(n)?[]:marksByNode.get(n.node_id)||[];
+ const b=cp(n.text),marks=mappedMarks(n);
  const points=[...new Set([lo,hi,...marks.flatMap(m=>[m.start,m.end]).filter(p=>p>lo&&p<hi)])].sort((x,y)=>x-y);
  return points.slice(0,-1).map((start,i)=>{const end=points[i+1],cover=marks.filter(m=>m.start<=start&&m.end>=end);const text=esc(b.slice(start,end).join(''));return cover.length?'<span tabindex="0" role="button" class="mk mk-'+esc(cover[0].r.severity)+' '+cover.map(m=>'m-'+m.r.risk_id+'-'+m.e.i).join(' ')+'">'+text+'</span>':text;}).join('');
 }
@@ -122,12 +162,15 @@ function renderDocument(){
   if(nodes[0].kind==='cell'){
    const rows=new Map();for(const n of nodes){if(!rows.has(n.row))rows.set(n.row,[]);rows.get(n.row).push(n)}
    html+='<table class="blk blk-table" data-bid="'+esc(bid)+'"><tbody>'+[...rows].map(([row,cells])=>'<tr>'+cells.map(n=>'<td data-node="'+esc(n.node_id)+'" tabindex="0" class="editable-node'+(nodeChanged(n)?' changed-node':'')+'">'+textMarkup(n)+nodeNotice(n)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
-  }else {const n=nodes[0];html+='<div class="blk editable-node'+(nodeChanged(n)?' changed-node':'')+'" data-node="'+esc(n.node_id)+'" data-bid="'+esc(bid)+'" tabindex="0">'+textMarkup(n)+(nodeChanged(n)?'<small class="stale-note">已修改，原审查需重新核实</small>':'')+nodeNotice(n)+'</div>';}
+  }else {const n=nodes[0];html+='<div class="blk '+(n.display_kind==='heading'||n.style?.toLowerCase().startsWith('heading')?'blk-heading ':'')+'editable-node'+(nodeChanged(n)?' changed-node':'')+'" data-node="'+esc(n.node_id)+'" data-bid="'+esc(bid)+'" tabindex="0">'+textMarkup(n)+(nodeChanged(n)?'<small class="stale-note">已修改，原审查需重新核实</small>':'')+nodeNotice(n)+'</div>';}
  }
- $('#contractRoot').innerHTML=html+'<div id="contractEnd" class="blk" aria-label="合同末尾"></div>';
+ const title=doc.title_guess||doc.source_name;$('#contractRoot').innerHTML=(current[0]?.text.trim()===title.trim()?'':'<div class="doc-title">'+esc(title)+'</div>')+html+'<div id="contractEnd" class="blk" aria-label="合同末尾"></div>';
+ if(current[0]?.text.trim()===title.trim())$('#contractRoot').querySelector('[data-node]')?.classList.add('doc-title');
+ for(const n of current){const el=$('#contractRoot').querySelector('[data-node="'+n.node_id+'"]');if(el&&['center','right','left','both'].includes(n.alignment))el.style.textAlign=n.alignment==='both'?'justify':n.alignment;}
  $('#targetNode').innerHTML=current.map(n=>'<option value="'+esc(n.node_id)+'">'+esc(n.node_id+' · '+n.text.slice(0,30))+'</option>').join('');
  if(selectedNode&&current.some(n=>n.node_id===selectedNode))$('#targetNode').value=selectedNode;
  if($('#docSearch').value.trim())searchDoc();
+ if(state.selected){const r=risks.find(r=>r.risk_id===state.selected);if(r)locate(r,state.evidence,false);}
 }
 function delta(before,after){const a=cp(before),b=cp(after);let start=0,tail=0;
  while(start<Math.min(a.length,b.length)&&a[start]===b[start])start++;
@@ -148,10 +191,10 @@ function commitOperation(op){
  event('apply',{revision_id:op.id});invalidate();$('#editPanel').hidden=true;editDraft=null;status('修改已记录，尚未最终确认或保存。');
 }
 function openManual(nodeId){
- const node=current.find(n=>n.node_id===nodeId);if(!node)return;
- selectedNode=nodeId;if(!node.editable){editDraft=null;$('#editPanel').hidden=true;status('此段暂不能直接编辑：'+(node.read_only_reason||'复杂Word结构')+'。请返回聊天处理该结构。',true);return;}
+ closePlan(false);closeManual();ui.kind='manual';ui.returnFocus=$('#contractRoot').querySelector('[data-node="'+nodeId+'"]');const node=current.find(n=>n.node_id===nodeId);if(!node)return;
+ selectedNode=nodeId;if(!node.editable){editDraft=null;$('#editPanel').hidden=true;status('此段暂不能直接编辑：'+(node.read_only_reason||'复杂Word结构')+'。可在该段之后插入补充条款；结构内改写请交给WorkBuddy文档工具。',true);return;}
  editDraft={node_id:nodeId,before_text:node.text,source:'manual',mode:'replace'};
- $('#editPanel').hidden=false;$('#targetNode').value=nodeId;$('#editMode').value='replace';$('#editText').value=node.text;$('#editBefore').textContent=node.text;$('#editReason').value='人工编辑';$('#editText').focus();
+ $('#editPanel').hidden=false;$('#targetNode').value=nodeId;$('#editMode').value='replace';$('#editText').value=node.text;$('#editBefore').textContent=node.text;$('#editReason').value='人工编辑';const draft=model.manual_drafts?.[nodeId];if(draft){$('#editText').value=draft.text;$('#editReason').value=draft.reason;$('#editMode').value=draft.mode;if(draft.mode==='partial'){$('#partialLocator').hidden=false;$('#partialOriginal').value=draft.fragment||'';findPartial();if(draft.start!==undefined&&draft.start!==null){$('#partialMatch').value=draft.start;choosePartial();}}}else $('#partialLocator').hidden=true;$('#editText').focus();
 }
 function suggestion(r){showPlan(r);}
 function applyDraft(){
@@ -174,8 +217,9 @@ function applyDraft(){
    after=chars.slice(0,editDraft.start).join('')+text+chars.slice(editDraft.end).join('');
   }
   if(after===node.text){status('内容未变化，没有生成修改记录。');return;}
-  const change=delta(node.text,after),type=change.removed_text?(change.inserted_text?'replace':'delete'):'insert';
-  commitOperation({type,node_id:node.node_id,before_text:node.text,after_text:after,...change,source:editDraft.source});
+  const change=mode==='partial'?{start:editDraft.start,end:editDraft.end,removed_text:editDraft.expected,inserted_text:text}:delta(node.text,after),type=change.removed_text?(change.inserted_text?'replace':'delete'):'insert';
+  if(node.locator&&(node.text.match(/[\t\n]/g)||[]).join('')!==(after.match(/[\t\n]/g)||[]).join(''))throw Error('请保留Tab/换行分隔符，只修改普通文字。');
+ delete model.manual_drafts?.[node.node_id];commitOperation({type,node_id:node.node_id,before_text:node.text,after_text:after,...change,source:editDraft.source});
  }catch(error){status(error.message,true);}
 }
 function transaction(change){const old=clone(model),oldNodes=clone(current);try{change();refreshFromOperations();}catch(error){model=old;current=oldNodes;status('操作已取消，原状态保留：'+error.message,true);}}
@@ -191,72 +235,96 @@ function refreshFromOperations(){
 function renderHistory(){
  $('#historyList').innerHTML=model.operations.map(o=>'<li><strong>'+esc(o.id)+'</strong> · '+esc(o.node_id)+' · '+(o.status==='active'?'有效':o.status==='undone'?'已撤销':'已分支保留')+' · '+(o.decision==='confirmed'?'已确认':'待确认')+'<div>'+esc(o.reason)+' · '+esc(o.time)+'</div></li>').join('')||'<li>尚无修改。历史不会因撤销而删除。</li>';
 }
-const planNames={ready:'可提交确认',needs_input:'需补充条件',coordinated_review:'需关联修改',manual_review:'需人工复核'};
-function showPlan(r){
- planSelection=r;const p=r.edit_plan;
+const planNames={ready:'可预览确认',editable_draft:'可编辑草案',needs_input:'需补充必要条件',coordinated_review:'需关联修改',manual_review:'需人工复核',generation_failed:'方案生成未完成'};
+function showPlan(r,focus=true){
+ if(planSelection&&planSelection!==r)rememberPlan();closeManual();ui.kind='plan';ui.risk=r.risk_id;planSelection=r;const card=document.getElementById('card-'+r.risk_id);if(!card){closePlan(false);return;}card.open=true;card.querySelector('.card-body').append($('#planPanel'));const p=r.edit_plan;
+ const candidates=r.edit_plans?.length?r.edit_plans:[p];$('#candidateLabel').hidden=candidates.length<2;$('#candidateSelect').innerHTML=candidates.map((c,i)=>'<option value="'+i+'">'+esc(c.label||('方案'+(i+1)))+'</option>').join('');$('#candidateSelect').value=Math.max(0,candidates.findIndex(c=>c.plan_id===p?.plan_id));
  $('#planPanel').hidden=false;$('#planTitle').textContent=r.risk_id+' · '+r.title;
+ if(ui.confirmedFieldPlan!==r.edit_plan?.plan_id){$('#fieldConfirm').checked=false;ui.confirmedFieldPlan=r.edit_plan?.plan_id;}
  if(!p){$('#planState').textContent='旧版建议尚未通过质量审查';$('#planWarnings').textContent='保留展示。请返回WorkBuddy生成正式修改计划；不从证据推测替换范围。';$('#planRows').innerHTML='';$('#planQuestions').innerHTML='';$('#planImpacts').textContent='';$('#applyPlan').disabled=true;return;}
  let runtime='';try{if(p.can_apply)ClausePlanTools.preflight(p,current);}catch(e){runtime=e.message;}
- const drafted=model.plan_drafts?.[p.plan_id];if(drafted?.needs_regeneration&&drafted.draft_id!==p.raw_plan?.input_draft_id)runtime='新增条件尚未重新生成、核验条款。';
+ const drafted=model.plan_drafts?.[p.plan_id],transient=model.ui_drafts?.[p.plan_id];if(drafted?.needs_regeneration&&drafted.draft_id!==p.raw_plan?.input_draft_id)runtime='新增条件尚未重新生成、核验条款。';
  if(Object.values(model.plan_groups||{}).some(g=>g.plan_fingerprint===p.plan_fingerprint&&model.operations.some(o=>o.group_id===g.group_id&&o.status==='active')))runtime='本计划已应用，不能重复执行。';
  $('#planState').textContent=runtime?('当前不可应用 · '+runtime+' · 风险仍待复审'):(planNames[p.readiness]||'需人工复核')+' · '+p.quality_result+' · 应用后仍待复审';
  $('#planWarnings').innerHTML=[...new Set([...p.blockers,...(runtime?[runtime]:[])])].map(t=>'<p>'+esc(t)+'</p>').join('')||'<p>所有系统检查条件已满足，请逐项核对后确认整组应用。</p>';
  $('#planRows').innerHTML=p.edits.map(e=>{const node=current.find(n=>n.node_id===e.target_node_id),before=e.expected_node_text??'',after=e.operation==='insert_clause'?e.replacement_text:(p.preview_nodes.find(n=>n.node_id===e.target_node_id)?.after??e.replacement_text);
-  const diff=e.draft_pending?'':diffSegments(e.operation==='insert_clause'?'':before,after).map(s=>s.type==='delete'?'<del>'+esc(s.text)+'</del>':s.type==='insert'?'<ins>'+esc(s.text)+'</ins>':esc(s.text)).join('');
-  return '<details open><summary>'+esc(e.target_node_id)+' · '+esc({partial:'局部替换',replace:'整段替换',delete_clause:'删除条款文字',insert_clause:'新增条款'}[e.operation])+'</summary><p>计划基准原文</p><pre>'+esc(before)+'</pre><p>'+(e.draft_pending?'尚待条件确认后生成正式文字':'修改后正式文字'+(after?'':'（删除，保留段落结构）'))+'</p><pre>'+esc(e.draft_pending?'':after)+'</pre><p>新增及删除差异</p><div class="plan-diff">'+diff+'</div>'+(!node||node.text!==before?'<p class="plan-error">当前原文已变化，禁止按旧计划应用。</p>':'')+'<p>修改原因：'+esc(p.reason)+'；关联节点：'+esc((e.dependencies||[]).join('、')||'未列出')+'</p></details>';}).join('');
+  const diff=e.draft_pending?'':diffSegments(e.operation==='insert_clause'?'':before,after).map(s=>s.type==='delete'?'<del>'+esc(displayFields(s.text,p))+'</del>':s.type==='insert'?'<ins>'+esc(displayFields(s.text,p))+'</ins>':esc(displayFields(s.text,p))).join('');
+  return '<details open><summary>修改位置 '+(p.edits.indexOf(e)+1)+' · '+esc({partial:'局部替换',replace:'整段替换',delete_clause:'删除条款文字',insert_clause:'新增条款'}[e.operation])+'</summary><p>计划基准原文</p><pre>'+esc(before)+'</pre><p>'+(e.draft_pending?'尚待条件确认后生成正式文字':'修改后拟议文字'+(after?'':'（删除，保留段落结构）'))+'</p><pre>'+esc(e.draft_pending?'':displayFields(after,p))+'</pre><p>新增及删除差异</p><div class="plan-diff">'+diff+'</div>'+(!node||node.text!==before?'<p class="plan-error">当前原文已变化，禁止按旧计划应用。</p>':'')+'<p>修改原因：'+esc(p.reason)+'；关联位置 '+(e.dependencies||[]).length+' 处</p></details>';}).join('');
  const targetIds=new Set(Object.keys(p.scope_node_texts||{}));
  const affected=risks.filter(x=>x.risk_id!==r.risk_id&&(Object.keys(x.edit_plan?.scope_node_texts||{}).some(id=>targetIds.has(id))||(x.evidence||[]).some(e=>current.some(n=>n.block_id===e.block_id&&targetIds.has(n.node_id))))).map(x=>x.risk_id+' '+x.title);
  $('#planImpacts').textContent='可能受到影响的其他风险：'+(affected.join('；')||'分析未列出；不能据此保证不存在关联。');
- $('#planQuestions').innerHTML=(p.questions||[]).filter(q=>q&&typeof q==='object').map(q=>'<label>'+esc(q.question)+(q.required?'（必填）':'')+(q.impact?'<small>'+esc(q.impact)+'</small>':'')+(Array.isArray(q.options)?'<ul>'+q.options.map(o=>'<li>'+esc(typeof o==='string'?o:(o.label||o.value||''))+(o?.impact?'：'+esc(o.impact):'')+'</li>').join('')+'</ul>':'')+'<textarea data-plan-question="'+esc(q.id)+'">'+esc(drafted?.answers?.[q.id]??q.answer??'')+'</textarea></label>').join('');
- $('#applyPlan').disabled=!p.can_apply||Boolean(runtime);$('#savePlanDraft').disabled=!(p.questions||[]).length;$('#planPanel').focus();
+ $('#planQuestions').innerHTML=(p.questions||[]).filter(q=>q&&typeof q==='object').map(q=>'<label>'+esc(q.question)+(q.required?'（必填）':'')+(q.impact?'<small>'+esc(q.impact)+'</small>':'')+(Array.isArray(q.options)?'<ul>'+q.options.map(o=>'<li>'+esc(typeof o==='string'?o:(o.label||o.value||''))+(o?.impact?'：'+esc(o.impact):'')+'</li>').join('')+'</ul>':'')+'<textarea data-plan-question="'+esc(q.id)+'">'+esc(transient?.answers?.[q.id]??drafted?.answers?.[q.id]??q.answer??'')+'</textarea></label>').join('');
+ $('#clauseDraftText').value=transient?.draft_text??drafted?.draft_text??proposalDraftText(p);
+ $('#previewFields').hidden=!p.field_bindings?.length;$('#fieldConfirmLabel').hidden=!p.field_bindings?.length;$('#applyPlan').disabled=!p.can_apply||Boolean(runtime);$('#applyPlan').title=runtime||p.blockers.join('；');$('#savePlanDraft').disabled=false;updateDraftProgress();if(focus)$('#planPanel').focus({preventScroll:true});
 }
+function planAnswers(){return Object.fromEntries([...$('#planQuestions').querySelectorAll('[data-plan-question]')].map(el=>[el.dataset.planQuestion,el.value.trim()]));}
+function missingAnswers(p,answers){return (p.questions||[]).filter(q=>q.required!==false&&!answers[q.id]?.trim());}
+function updateDraftProgress(){const p=planSelection?.edit_plan;if(p)$('#draftProgress').textContent='未填写必要条件 '+missingAnswers(p,planAnswers()).length+' 项；保存草稿可不完整，提交核验须填完。';}
 function savePlanDraft(){
- const p=planSelection?.edit_plan;if(!p){status('旧版建议需由WorkBuddy生成计划。',true);return;}
- if(!p.plan_id||['__proto__','constructor','prototype'].includes(p.plan_id)){status('计划ID不合法，需重新生成。',true);return;}
- const answers=Object.fromEntries([...$('#planQuestions').querySelectorAll('[data-plan-question]')].map(el=>[el.dataset.planQuestion,el.value.trim()]));
- model.plan_drafts??={};const draft_id='draft-'+crypto.randomUUID();model.plan_drafts[p.plan_id]={draft_id,plan_id:p.plan_id,plan_fingerprint:p.plan_fingerprint,answers,needs_regeneration:true,time:new Date().toISOString()};
- event('save_plan_draft',{plan_id:p.plan_id,draft_id,answers:clone(answers),plan_fingerprint:p.plan_fingerprint});invalidate();$('#applyPlan').disabled=true;status('条件已保存为待完善草稿；尚未修改合同，需保存JSON并返回WorkBuddy重新生成、核验受影响计划。');
+ const p=planSelection?.edit_plan;if(!p)return false;const answers=planAnswers(),text=$('#clauseDraftText').value;rememberPlan();
+ const prior=model.plan_drafts?.[p.plan_id],initial=Object.fromEntries((p.questions||[]).map(q=>[q.id,String(q.answer||'')])),baseText=proposalDraftText(p);
+ if(equal(answers,prior?.answers||initial)&&text===(prior?.draft_text??baseText)&&(prior||p.can_apply||!missingAnswers(p,answers).length)){persist();updateStatus();status('内容未变化，没有创建新版本或使原方案失效。');return true;}
+ const draft_id='draft-'+crypto.randomUUID(),missing=missingAnswers(p,answers).length;model.plan_drafts??={};model.plan_drafts[p.plan_id]={draft_id,plan_id:p.plan_id,plan_fingerprint:p.plan_fingerprint,answers,draft_text:text,missing_required:missing,status:missing?'incomplete':'awaiting_review',needs_regeneration:true,time:new Date().toISOString()};
+ event('save_plan_draft',{plan_id:p.plan_id,draft_id,missing_required:missing,plan_fingerprint:p.plan_fingerprint});persist();updateStatus();$('#applyPlan').disabled=true;updateDraftProgress();status('已保存待完善草稿，未填写 '+missing+' 项必要条件；合同正文未修改。');return true;
 }
+$('#planQuestions').addEventListener('input',()=>{$('#fieldConfirm').checked=false;rememberPlan();persist();updateStatus();updateDraftProgress();});$('#clauseDraftText').addEventListener('input',()=>{rememberPlan();persist();updateStatus();$('#applyPlan').disabled=true;status('自由修改保留为草案，需要对变化部分重新核验。');});
+$('#candidateSelect').addEventListener('change',()=>{rememberPlan();const r=planSelection;r.edit_plan=r.edit_plans[Number($('#candidateSelect').value)];model.candidate_choices??={};model.candidate_choices[r.analysis_id||r.risk_id]=r.edit_plan.plan_id;event('choose_candidate',{analysis_risk_id:r.analysis_id||r.risk_id,plan_id:r.edit_plan.plan_id});persist();updateStatus();showPlan(r,false);});
+$('#previewFields').addEventListener('click',async()=>{try{if(!$('#fieldConfirm').checked)throw Error('请先确认所填信息是已经核实的事实');const r=planSelection,t=r.edit_plan;if($('#clauseDraftText').value!==proposalDraftText(t))throw Error('草案包含自由改写，需要对变化部分重新核验；不能仅填写字段后应用。');const answers=planAnswers(),values=Object.fromEntries(t.field_bindings.map(f=>[f.id,answers[f.question_id]]));const template=r.edit_plans?.find(c=>c.plan_id===t.plan_id)||t;const p=await ProposalTools.instantiate(template,values);model.materialized_plans??={};model.materialized_plans[t.plan_id]=p;model.ui_drafts??={};delete model.ui_drafts[t.plan_id];model.plan_drafts??={};delete model.plan_drafts[t.plan_id];r.edit_plan=p;event('materialize_pre_reviewed_fields',{plan_id:p.plan_id,values,semantic_review_reused:true});persist();updateStatus();showPlan(r,false);renderCards();status('已按预审字段规则形成完整预览；没有新增法律语义审查，请再确认应用。');}catch(e){status('尚不能直接填入：'+e.message,true);}});
+
 async function applyPlan(){
  if(planBusy)return;planBusy=true;$('#applyPlan').disabled=true;
  try{
   const r=planSelection,p=r?.edit_plan;if(!p)throw Error('没有经过校验的修改计划。');
   if(p.source_file_sha256!==doc.identity.file_sha256)throw Error('修改计划与当前原始合同不匹配。');
-  const before=serialized();await ClausePlanTools.verify(p);if(before!==serialized())throw Error('核验期间编辑状态已变化，请重新预览。');
+  const before=serialized();await ClausePlanTools.verify(p);if(before!==serialized()||planSelection!==r||$('#planPanel').hidden)throw Error('核验期间编辑状态或所选风险已变化，请重新预览。');
   const drafted=model.plan_drafts?.[p.plan_id];if(drafted?.needs_regeneration&&drafted.draft_id!==p.raw_plan?.input_draft_id)throw Error('补充条件尚未完成重新核验。');
   if(Object.values(model.plan_groups||{}).some(g=>g.plan_fingerprint===p.plan_fingerprint&&model.operations.some(o=>o.group_id===g.group_id&&o.status==='active')))throw Error('同一计划已应用，禁止重复应用。');
   const steps=ClausePlanTools.preflight(p,current);
-  if(!confirm('确认应用本计划的全部 '+p.edits.length+' 项动作？修改会整组记录，可整体撤销；风险仍需复审。'))return;
+  if(!confirm('确认应用全部 '+p.edits.length+' 项修改'+(p.proposed_terms?.length?'，并接受以下谈判建议（不是原事实或法律强制）：'+p.proposed_terms.map(t=>t.value).join('；'):'')+'？可整体撤销，风险仍需复审。'))return;
   const proposed=clone(model),next=clone(current),abandoned=new Set(proposed.redo_stack);proposed.operations.forEach(o=>{if(abandoned.has(o.id))o.status='abandoned'});proposed.redo_stack=[];
   const gid='group-'+crypto.randomUUID(),ids=[];
   for(const step of steps){const id='rev-'+crypto.randomUUID();ids.push(id);let op;
    if(step.kind==='insert'){const nid='n-'+crypto.randomUUID(),at=next.findIndex(n=>n.node_id===step.anchor);next.splice(at+1,0,{node_id:nid,block_id:nid,kind:'paragraph',text:step.after,editable:true,inserted:true,anchor_node_id:step.anchor});op={type:'insert_node',node_id:nid,anchor_node_id:step.anchor};}
    else {const n=next.find(n=>n.node_id===step.node_id);if(n.text!==step.before)throw Error('整组执行原文冲突。');n.text=step.after;op={type:step.after?'replace':'delete',node_id:step.node_id};}
-   proposed.operations.push({...op,id,group_id:gid,plan_id:p.plan_id,edit_ids:step.edit_ids,status:'active',decision:'pending',source:'ai',perspective:clone(DATA.meta.perspective||{mode:'neutral'}),time:new Date().toISOString(),review_id:reviewId,risk_id:r.risk_id,reason:p.reason,before_text:step.before,after_text:step.after,start:0,end:cp(step.before).length,removed_text:step.before,inserted_text:step.after});
+   proposed.operations.push({...op,id,group_id:gid,plan_id:p.plan_id,edit_ids:step.edit_ids,status:'active',decision:'pending',source:'ai',perspective:clone(DATA.meta.perspective||{mode:'neutral'}),time:new Date().toISOString(),review_id:reviewId,risk_id:r.risk_id,reason:p.reason,before_text:step.before,after_text:step.after,start:step.kind==='insert'?0:step.start,end:step.kind==='insert'?0:step.end,removed_text:step.kind==='insert'?'':step.removed,inserted_text:step.kind==='insert'?step.after:step.inserted,analysis_risk_id:r.analysis_id||p.risk_identity?.analysis_id||p.risk_id});
   }
-  proposed.plan_groups??={};proposed.plan_groups[gid]={group_id:gid,plan_id:p.plan_id,plan_fingerprint:p.plan_fingerprint,operation_ids:ids,snapshot:clone(p)};
+  proposed.plan_groups??={};proposed.plan_groups[gid]={group_id:gid,plan_id:p.plan_id,plan_fingerprint:p.plan_fingerprint,operation_ids:ids,snapshot:clone(p),accepted_negotiation_terms:clone(p.proposed_terms||[])};
   proposed.risk_status??={};proposed.risk_status[riskKey(r.risk_id)]={status:'needs_re_review',group_id:gid};proposed.history.push({action:'apply_plan',group_id:gid,time:new Date().toISOString(),risk_status:'needs_re_review'});
   proposed.current_nodes=Object.fromEntries(next.map(n=>[n.node_id,n.text]));const verified=replay(proposed);delete proposed.current_nodes;model=proposed;current=verified;invalidate();showPlan(r);status('整组修改已记录，全部保持待确认；原风险及关联风险仍需复审。');
  }catch(e){status('计划未应用：'+e.message,true);}
  finally{planBusy=false;}
 }
-$('#applyPlan').addEventListener('click',applyPlan);$('#savePlanDraft').addEventListener('click',savePlanDraft);$('#closePlan').addEventListener('click',()=>{$('#planPanel').hidden=true;planSelection=null;});
-$('#requestPlanReview').addEventListener('click',()=>{savePlanDraft();$('#handoffPanel').hidden=false;$('#handoffText').value='请读取原合同、已有审查结果及我保存的revisions.json中的plan_drafts。只重新生成并核验补充条件影响的修改计划与关联范围，保留原有编辑和历史；必要时请求更多条件。将输入draft_id绑定到新计划input_draft_id并重新进行10项语义审查，不把待完善草稿当成已应用修改，不把应用当成风险已解决。';});
+$('#applyPlan').addEventListener('click',applyPlan);$('#savePlanDraft').addEventListener('click',savePlanDraft);$('#closePlan').addEventListener('click',()=>closePlan());
+$('#requestPlanReview').addEventListener('click',()=>{const p=planSelection?.edit_plan;if(!p)return;const missing=missingAnswers(p,planAnswers());if(missing.length){status('请补充 '+missing.length+' 项必要条件后再提交；可以先保存不完整草稿。',true);updateDraftProgress();return;}savePlanDraft();$('#completion').hidden=false;$('#handoffPanel').hidden=false;$('#handoffPanel').open=false;$('#handoffText').value='请读取原合同 '+JSON.stringify(doc.source_file||doc.source_name)+'、本次审查结果与我保存的revisions.json。恢复全部已有修改，只处理plan_drafts中的变化条件和所属风险，重新生成并核验受影响方案，完成10项语义审查。保留历史，把draft_id绑定新计划input_draft_id；不要把草稿当作已应用条款，不把操作成功当作风险解决。';status('提交核验条件已完整。请保存修订文件并复制交接指令返回WorkBuddy。');});
+
 function decorateCards(){
  for(const card of document.querySelectorAll('.card')){
   const r=risks.find(r=>r.risk_id===card.dataset.risk),body=card.querySelector('.card-body');if(!r||!body)continue;
+  const chosen=model.candidate_choices?.[r.analysis_id||r.risk_id];if(chosen){const p=r.edit_plans?.find(p=>p.plan_id===chosen);if(p)r.edit_plan=p;}
+  const filled=model.materialized_plans?.[r.edit_plan?.plan_id];if(filled)r.edit_plan=filled;
   const source={legal:'法律风险',company_policy:'企业制度',negotiation:'商务谈判建议',experience:'用户经验'}[r.risk_source||'legal'];
   const stale=riskStale(r),rejected=model.risk_decisions[riskKey(r.risk_id)]?.decision==='rejected';
   const draft=model.plan_drafts?.[r.edit_plan?.plan_id],needsInputReview=draft?.needs_regeneration&&draft.draft_id!==r.edit_plan?.raw_plan?.input_draft_id;
   if(stale||needsInputReview){const note=body.querySelector('.suggestion-note');if(note)note.textContent='当前正文或补充条件已变化，原方案不可直接应用；风险保持待复审。';const copy=body.querySelector('[data-copy]');if(copy)copy.disabled=true;const tag=body.querySelector('.clause-nav span');if(tag)tag.textContent='原计划需重新核验';}
   body.insertAdjacentHTML('afterbegin','<div class="risk-origin">'+esc(source)+(stale?' · 此处已修改，建议重新审查':'')+(rejected?' · 暂不采纳':'')+'</div>');
-  const p=r.edit_plan,action=!p?'核验旧版建议':p.readiness==='needs_input'?'完善条款':p.readiness==='coordinated_review'?'查看关联修改方案':p.can_apply?'预览修改':'查看人工复核事项';
+  const p=r.edit_plan,action=!p?'核验旧版建议':['needs_input','editable_draft'].includes(p.readiness)?'补充必要条件':p.readiness==='coordinated_review'?'查看关联修改方案':p.can_apply?'预览并应用':p.readiness==='generation_failed'?'查看生成状态':'查看人工复核事项';
   body.insertAdjacentHTML('beforeend','<div class="suggestion-actions"><button class="btn" data-apply="'+esc(r.risk_id)+'">'+action+'</button><button class="btn" data-reject="'+esc(r.risk_id)+'">'+(rejected?'恢复待确认':'暂不采纳')+'</button></div>');
  }
 }
-const oldRender=renderCards;renderCards=function(){oldRender();decorateCards();};
-const oldLocate=locate;locate=function(r,j=0){if(riskStale(r)){clearLocation();state.selected=r.risk_id;$('#locStatus').textContent='此处内容已修改，旧原文定位已停用，请重新审查。';return;}oldLocate(r,j);};
-function handoff(kind){
+function restoreChosenPlans(){for(const r of risks){const chosen=model.candidate_choices?.[r.analysis_id||r.risk_id];if(chosen){const p=r.edit_plans?.find(p=>p.plan_id===chosen);if(p)r.edit_plan=p;}const filled=model.materialized_plans?.[r.edit_plan?.plan_id];if(filled)r.edit_plan=filled;}}
+const oldRender=renderCards;renderCards=function(){
+ restoreChosenPlans();
+ const active=planSelection;rememberPlan();$('#planParking').append($('#planPanel'));oldRender();decorateCards();
+ if(active&&document.getElementById('card-'+active.risk_id)?.open)showPlan(active,false);else if(active)closePlan(false);
+};
+$('#riskList').addEventListener('toggle',e=>{const c=e.target;if(c.matches('.card')&&!c.open&&ui.risk===c.dataset.risk)closePlan(false);},true);
+$('#riskList').addEventListener('click',e=>{const summary=e.target.closest('.card>summary');if(summary){const c=summary.parentElement;if(!c.open){const r=risks.find(r=>r.risk_id===c.dataset.risk);locate(r);}}});
+$('#collapseAll').addEventListener('click',()=>closePlan(false));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(ui.kind==='plan'){e.preventDefault();closePlan();}else if(ui.kind==='manual'){e.preventDefault();const target=ui.returnFocus;closeManual();target?.focus({preventScroll:true});}}});
+
+const oldLocate=locate;locate=function(r,j=0,scroll=true){const ev=r.evidence?.[j];if(ev?.has_span&&!ev.no_text&&!marksFor(r,evidenceIndex(ev,j)).length){clearLocation();state.selected=r.risk_id;$('#locStatus').textContent='此证据原文已变更，待复审；其他未变更片段仍可定位。';return;}oldLocate(r,j,scroll);};
+
+function handoff(kind,requestFocus=true){
  const mode=$('#perspectiveSelect').value,focus=$('#perspectiveFocus').value.trim();
  if(kind==='perspective'){model.perspective={...model.perspective,mode,focus};event('perspective_request',{mode,focus});persist();updateStatus();}
  const originalFile=doc.source_file||doc.source_name;
@@ -264,50 +332,55 @@ function handoff(kind){
  if(kind==='word')text='请读取原始 DOCX '+JSON.stringify(originalFile)+' 及我保存的 revisions.json。先校验合同标识、操作历史和每处原文，只应用已确认的有效修改，生成新的 DOCX，保留原有Word修订与批注，含旧修订的文字段落追加新的原生修订，不接受或拒绝旧记录。尽可能保留原排版并逐项核验。对于未确认或冲突项先提示我，不要自行决定；不要覆盖原文件。如需所有新增修改均带Word原生修订，请使用apply_docx.py的 --track-changes。';
  else if(kind==='perspective')text='请读取原始合同 '+JSON.stringify(originalFile)+'、已有审查任务和保存的 revisions.json，以'+names[mode]+'视角重新分析；重点：'+(focus||'按该视角核查权利义务')+'。先确认真实甲乙方主体。复用解析及已核验法条，客观法律判断不随立场改变；保存修改历史，创建新的审查运行目录，对与现有修改冲突的建议让我选择。浏览器尚未完成重新审查。';
  else text='请读取原始合同 '+JSON.stringify(originalFile)+'、我保存的 revisions.json 和已有审查结果。用 revisions.py 校验并还原当前有效修改稿，在新的任务目录重新审查，明确已解决、仍然存在、新增及待确认风险，保留全部修订与审查历史。未确认修改可以用于复审草稿，但不得自动作为最终 Word。';
- $('#handoffPanel').hidden=false;$('#handoffText').value=text;$('#handoffText').focus();$('#handoffText').select();
+ text+='\n原始合同SHA256：'+doc.identity.file_sha256+'；修订文件：'+(fileHandle?.name||'revisions.json')+'。恢复时保留有效、撤销、确认状态与全部历史，禁止将其他合同的修订混用。';
+ $('#completion').hidden=false;$('#handoffPanel').hidden=false;$('#handoffPanel').open=requestFocus;$('#handoffText').value=text;if(requestFocus){$('#handoffText').focus();$('#handoffText').select();}
  if(kind==='perspective')status('已生成请求，当前报告仍为'+names[DATA.meta.perspective?.mode||'neutral']+'视角；请先保存，再返回 WorkBuddy 重新分析。');
 }
-async function copyText(text){try{await navigator.clipboard.writeText(text);toast('指令已复制');}catch{$('#handoffText').focus();$('#handoffText').select();toast('已选中指令，请按 Ctrl+C / Command+C 复制');}}
+async function copyText(text){try{await navigator.clipboard.writeText(text);toast('指令已复制');}catch{$('#completion').hidden=false;$('#handoffPanel').hidden=false;$('#handoffPanel').open=true;$('#handoffText').focus();$('#handoffText').select();toast('已选中指令，请按 Ctrl+C / Command+C 复制');}}
 async function saveNative(){
  try{
   if(typeof window.showSaveFilePicker!=='function')throw Error('浏览器不支持直接写入，请使用下载修订 JSON。');
   if(!fileHandle)fileHandle=await window.showSaveFilePicker({suggestedName:'revisions.json',excludeAcceptAllOption:true,types:[{description:'修订记录',accept:{'application/json':['.json']}}]});
   if(!fileHandle.name?.toLowerCase().endsWith('.json')||fileHandle.name===doc.source_name){fileHandle=null;throw Error('仅允许保存为独立 JSON 文件，不能覆盖原始合同。');}
   const snapshot=serialized(),stream=await fileHandle.createWritable();await stream.write(snapshot);await stream.close();
-  savedSnapshot=snapshot;pendingDownload=null;updateStatus();status('修订记录已成功写入所选本地文件。');
- }catch(error){status(error.name==='AbortError'?'已取消保存；修改尚未保存。':'保存失败：'+error.message,true);}
+  savedSnapshot=snapshot;savePhase='file_written';pendingDownload=null;updateStatus();status('修订记录已成功写入所选本地文件。');
+ }catch(error){savePhase='failed';updateStatus();status(error.name==='AbortError'?'已取消保存；修改尚未保存。':'保存失败：'+error.message,true);}
 }
 function download(){
- try{const snapshot=serialized(),blob=new Blob([snapshot],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='revisions.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);pendingDownload=snapshot;$('#confirmDownload').hidden=false;status('已发起 revisions.json 下载。请检查下载文件后点击“确认文件已保存”；当前尚未标记保存成功。');}
- catch(error){status('下载失败：'+error.message,true);}
+ try{const snapshot=serialized(),blob=new Blob([snapshot],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='revisions.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);pendingDownload=snapshot;savePhase='download_started';updateStatus();$('#confirmDownload').hidden=false;status('已发起 revisions.json 下载。请检查下载文件后点击“确认文件已保存”；当前尚未标记保存成功。');}
+ catch(error){savePhase='failed';updateStatus();status('下载失败：'+error.message,true);}
 }
 function finish(){
- $('#workflowTools').open=true;
- if(!model.operations.length&&!model.history.length){$('#completion').hidden=false;$('#completionText').textContent='尚无修改，无需生成修改后的 Word。可返回 WorkBuddy 继续审查。';return;}
+ $('#completion').hidden=false;
  if(dirty){$('#completion').hidden=false;$('#completionText').textContent='存在未保存记录。请先写入本地文件，或下载 JSON 并确认文件保存后，再完成编辑。';status('完成编辑前，请先保存修订记录。',true);return;}
+ if(!hasRecords()){$('#completionText').textContent='尚无修改，无需生成修改后的 Word。可返回 WorkBuddy 继续审查。';return;}
  const active=model.operations.filter(o=>o.status==='active'),pending=active.filter(o=>o.decision==='pending');
  $('#completionList').innerHTML=active.map(o=>'<li>'+esc(o.node_id)+' · '+(o.decision==='confirmed'?'已确认修改':'待确认修改')+' · '+esc(o.reason||o.id)+'</li>').join('')+Object.values(model.risk_decisions).filter(x=>x.decision==='rejected').map(x=>'<li>暂不采纳：'+esc(x.risk_id||'历史风险')+' · '+esc(x.review_id||'原审查')+'</li>').join('');
- $('#completion').hidden=false;$('#completionText').textContent='有效修改 '+active.length+' 项，其中待最终确认 '+pending.length+' 项；暂不采纳 '+Object.values(model.risk_decisions).filter(x=>x.decision==='rejected').length+' 项。返回 WorkBuddy 生成新 Word；保存记录与生成 Word 是两个独立操作。';handoff('word');
+ $('#completion').hidden=false;$('#completionText').textContent=active.length?'有效修改 '+active.length+' 项，其中待最终确认 '+pending.length+' 项；暂不采纳 '+Object.values(model.risk_decisions).filter(x=>x.decision==='rejected').length+' 项。返回 WorkBuddy 生成新 Word；保存记录与生成 Word 是两个独立操作。':'仅有草稿、采纳决定或候选选择，正文没有有效修改；可返回WorkBuddy核验这些记录。';completedSnapshot=serialized();handoff(active.length?'word':'rereview',false);
 }
 $('#editEnabled').addEventListener('change',()=>{status($('#editEnabled').checked?'编辑已开启：点击段落或常见单元格，再确认修改。':'阅读模式：点击风险标记定位。');});
 $('#contractRoot').addEventListener('click',e=>{const el=e.target.closest('[data-node]');if(el){selectedNode=el.dataset.node;if($('#editEnabled').checked){e.stopImmediatePropagation();openManual(selectedNode);}}},true);
 $('#contractRoot').addEventListener('keydown',e=>{if(e.key==='Enter'&&$('#editEnabled').checked&&e.target.matches('[data-node]')){e.preventDefault();openManual(e.target.dataset.node);}});
 $('#insertClause').addEventListener('click',()=>{const node=current.find(n=>n.node_id===selectedNode)||current[current.length-1];if(!node){status('合同无节点，不能插入。',true);return;}openManual(node.node_id);if(!editDraft){editDraft={node_id:node.node_id,before_text:node.text,source:'manual'};$('#editPanel').hidden=false;$('#targetNode').value=node.node_id;}$('#editMode').value='insert';$('#editText').value='';$('#editBefore').textContent='将在所选节点所在段落或表格之后插入新条款。';});
 $('#targetNode').addEventListener('change',()=>{const node=current.find(n=>n.node_id===$('#targetNode').value);if(!node)return;selectedNode=node.node_id;editDraft={...editDraft,node_id:node.node_id,before_text:node.text,mode:'replace',start:null,end:null};$('#editBefore').textContent=node.text;$('#editMode').value='replace';status('你已选择新节点；整段替换前请核对全部原文。');});
-$('#applyEdit').addEventListener('click',applyDraft);$('#cancelEdit').addEventListener('click',()=>{$('#editPanel').hidden=true;editDraft=null;});
+$('#applyEdit').addEventListener('click',applyDraft);$('#cancelEdit').addEventListener('click',()=>{const target=ui.returnFocus;closeManual();target?.focus({preventScroll:true});});
+function choosePartial(){const node=current.find(n=>n.node_id===$('#targetNode').value),text=$('#partialOriginal').value;const start=Number($('#partialMatch').value);if(!editDraft||!node||$('#partialMatch').value===''){if(editDraft)editDraft.start=null;return;}editDraft={...editDraft,node_id:node.node_id,before_text:node.text,start,end:start+cp(text).length,expected:text};$('#editBefore').textContent=text;}
+function findPartial(){const node=current.find(n=>n.node_id===$('#targetNode').value),query=$('#partialOriginal').value,matches=[];if(node&&query){let index=node.text.indexOf(query);while(index>=0){matches.push({start:cp(node.text.slice(0,index)).length,context:node.text.slice(Math.max(0,index-10),index+query.length+10)});index=node.text.indexOf(query,index+Math.max(1,query.length));}}$('#partialMatch').innerHTML='<option value="">请选择位置（'+matches.length+'处）</option>'+matches.map((m,i)=>'<option value="'+m.start+'">第'+(i+1)+'处 · '+esc(m.context)+'</option>').join('');if(matches.length===1)$('#partialMatch').value=matches[0].start;choosePartial();}
+$('#editMode').addEventListener('change',()=>{$('#partialLocator').hidden=$('#editMode').value!=='partial';if($('#editMode').value==='partial'){$('#partialOriginal').value='';$('#editText').value='';findPartial();}});$('#partialOriginal').addEventListener('input',findPartial);$('#partialMatch').addEventListener('change',choosePartial);
 $('#displayMode').addEventListener('change',renderDocument);$('#undoBtn').addEventListener('click',undo);$('#redoBtn').addEventListener('click',redo);
 $('#restoreOriginal').addEventListener('click',()=>{if(!confirm('恢复原始内容会撤销全部有效修改，并保留历史。继续？'))return;transaction(()=>{model.redo_stack=[];[...model.operations].reverse().forEach(o=>{if(o.status==='active'||o.status==='undone'){o.status='undone';model.redo_stack.push(o.id)}});event('restore_original');});});
 $('#confirmEdits').addEventListener('click',()=>{model.operations.filter(o=>o.status==='active').forEach(o=>o.decision='confirmed');event('confirm_active');persist();updateStatus();status('当前有效修改已确认。请重新保存修订记录。');});
 $('#riskList').addEventListener('click',e=>{const b=e.target.closest('[data-apply],[data-edit-suggestion],[data-reject]');if(!b)return;
  const id=b.dataset.apply||b.dataset.editSuggestion||b.dataset.reject,r=risks.find(r=>r.risk_id===id);if(!r)return;
  if(b.dataset.reject){const key=riskKey(id);model.risk_decisions[key]={decision:model.risk_decisions[key]?.decision==='rejected'?'pending':'rejected',time:new Date().toISOString(),perspective:clone(DATA.meta.perspective||{mode:'neutral'}),review_id:reviewId,risk_id:id};event('risk_decision',{risk_id:id,review_id:reviewId});persist();renderCards();updateStatus();if(model.operations.some(o=>o.risk_id===id&&o.review_id===reviewId&&o.status==='active'))status('已更新采纳决定；此前应用的修改仍保留，请用撤销或人工编辑处理。');}
- else suggestion(r,Boolean(b.dataset.editSuggestion));
+ else{ui.returnFocus=b;suggestion(r,Boolean(b.dataset.editSuggestion));}
 });
 $('#saveNative').addEventListener('click',saveNative);$('#downloadRevisions').addEventListener('click',download);
-$('#confirmDownload').addEventListener('click',()=>{if(!pendingDownload||pendingDownload!==serialized()){status('下载后又有修改，请重新下载最新记录。',true);return;}savedSnapshot=pendingDownload;pendingDownload=null;$('#confirmDownload').hidden=true;updateStatus();status('已记录你对下载文件保存成功的确认。');});
-$('#importRevisions').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>20*1024*1024)throw Error('修订文件超过 20MB。');const value=JSON.parse(await file.text());for(const g of Object.values(value.plan_groups||{}))await ClausePlanTools.verify(g.snapshot);replay(value);if(dirty&&model.operations.length&&!confirm('导入将替换当前浏览器编辑状态。请确保现有记录已保存；继续？'))return;restore(value,true);status('修订文件校验通过，编辑状态与历史已恢复。');}catch(error){status('导入失败：'+error.message,true);}e.target.value='';});
-$('#perspectiveRequest').addEventListener('click',()=>handoff('perspective'));$('#rereviewRequest').addEventListener('click',()=>handoff('rereview'));$('#copyHandoff').addEventListener('click',()=>copyText($('#handoffText').value));$('#finishEditing').addEventListener('click',finish);
+$('#confirmDownload').addEventListener('click',()=>{if(!pendingDownload||pendingDownload!==serialized()){status('下载后又有修改，请重新下载最新记录。',true);return;}savedSnapshot=pendingDownload;savePhase='user_confirmed';pendingDownload=null;$('#confirmDownload').hidden=true;updateStatus();status('已记录你对下载文件保存成功的确认。');});
+$('#importRevisions').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>20*1024*1024)throw Error('修订文件超过 20MB。');const migration=migrateLegacy(JSON.parse(await file.text())),value=migration.value;for(const g of Object.values(value.plan_groups||{}))await ClausePlanTools.verify(g.snapshot);replay(value);if(dirty&&hasRecords()&&!confirm('导入将替换当前浏览器编辑状态。请确保现有记录已保存；继续？'))return;restore(value,!migration.migrated);status(migration.migrated?'旧解析表示已受控迁移，编辑与历史已恢复，请另存新的JSON。':'修订文件校验通过，编辑状态与历史已恢复。');}catch(error){status('导入失败：'+error.message,true);}e.target.value='';});
+$('#perspectiveRequest').addEventListener('click',()=>handoff('perspective'));$('#rereviewRequest').addEventListener('click',()=>handoff('rereview'));$('#copyHandoff').addEventListener('click',()=>copyText($('#handoffText').value));$('#finishEditing').addEventListener('click',finish);$('#copyCompletionHandoff').addEventListener('click',()=>copyText($('#handoffText').value));
 $('#saveNative').disabled=typeof window.showSaveFilePicker!=='function';
+$('#saveNative').title=$('#saveNative').disabled?'此浏览器不支持直接写入；可下载JSON后确认文件已保存。':'选择独立JSON文件写入';
 $('#preferencesInfo').textContent=DATA.editor.context.preferences_configured?'已加载 '+(DATA.editor.context.preferences||[]).length+' 项适用偏好。查看、修改或禁用请返回 WorkBuddy。':'未配置长期偏好。首次审查请由 WorkBuddy 询问；可跳过并采用默认中立标准。';
 $('#perspectiveSelect').value=model.perspective.mode||'neutral';
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});

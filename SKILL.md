@@ -19,7 +19,7 @@ V2 在原审查流程上增加长期偏好、审查视角与离线修订工作�
 ## 核心立场（每次审查都必须遵守）
 
 1. **默认中立**：未指定时不默认代表甲方或乙方。用户可明确选择甲方、乙方或自定义视角；先核实真实主体，再调整利益风险、优先级与建议。同一事实的客观法律判断不随立场改变。企业制度、商务偏好与经验分别标注来源，不直接作为违法依据。
-2. **审查依据仅限三部法律**：《中华人民共和国民法典》《中华人民共和国劳动合同法（2012修正）》《中华人民共和国公司法（2023修订）》。知识库之外的领域（如个人信息保护法、招标投标法、司法解释、行政法规）→ 只能列为"待核实事项"并在 `scope_note` 写明"超出本技能审查范围（三部法律未覆盖）"，**不得引用未入库的法律条文，不得凭记忆复述法条**。
+2. **依据已核验的本地法律资源**：核心为《民法典》《劳动合同法（2012修正）》《公司法（2023修订）》固定快照；按 [专业资源扩展](references/knowledge_extensions.md) 可增加真实核验的版本资源。未收录或未核验领域只能列为待核实事项并写清scope_note，不引用未核验条文、不凭记忆复述。未知合同日期不从编号推断，也不自动判旧法引用错误。
 3. **强制性规定 vs 完整性建议**：法律有明确强制要求的按法律核查；法律未强制但影响完整性/清晰度的，归类"条款缺失"或"条款约定不明确"，`conclusion` 中不得出现"违法"字样。
 4. **不认定整体无效**：任何情况下不得输出"本合同无效"的结论。存在效力疑点时归类"合同效力风险"，表述为"存在效力风险/可能影响效力，需人工确认"，并列入 `manual_checks`。
 5. **不编造**：法条、条文原文、证据 quote、位置、司法解释一律不得编造。宁缺毋滥——校验脚本会把编造内容标红示众，但源头就不要产生。
@@ -34,7 +34,7 @@ V2 在原审查流程上增加长期偏好、审查视角与离线修订工作�
 - 命令在本 skill 根目录运行，或改用资源绝对路径；必须保留 scripts、assets、references 与 law_index 完整文件夹。
 - 偏好默认保存于 `~/.workbuddy/user_data/contract-legal-review/`，允许 `--config-dir` 或 `WORKBUDDY_REVIEW_CONFIG_DIR` 指定实际可写位置，不写入安装目录。实际写入失败时提示并选择用户可写目录。
 - 每次审查建一个任务目录：`<workspace>/contract_reviews/<合同文件名>_<YYYYmmdd_HHMMSS>/`。
-- 法律知识库：`law_index/`（本 skill 根目录下，3 个 JSON，含条文全文、主题索引、来源与校验和）。**不要**把知识库全文读入上下文，只用 `search_law.py` 检索。
+- 法律知识库：`law_index/`含三个核心快照，`law_index/extensions/`支持已核验的专业版本扩展。**不要**把知识库全文读入上下文，只用 `search_law.py` 检索。
 
 ## 工作流程（八步）
 
@@ -85,13 +85,15 @@ law_id：`minfadian`（民法典）、`laodonghetongfa`（劳动合同法2012修
 
 建议生成与执行前，按 [通用建议质量工作流](references/quality_workflow.md) 分析风险原因、权利义务和关联关系，生成contract_analysis及结构化edit_plan。关键业务条件缺失时提具体问题，不生成虚假的可应用条款。正式replacement_text与解释reason分开；不要使用合同类型、名称、条号或风险编号的固定处理模板。计划需经过确定性检查及WorkBuddy对拟修改完整稿的十项语义检查，不能用定位成功代替风险解决。
 
+本次首次审查统一生成风险及suggestion.candidates，依 [完整生成与便捷修订流程](references/usability_workflow.md) 区分真实事实、可谈判推荐和必须核实信息。信息充分时直接形成完整候选与位置，不遗漏修改计划；每项风险有计划或明确no_edit_reason。谈判推荐可以具体，但不得冒充已知事实或法律强制。仅预审字段可确定性填入，实质改写重新核验。
+
 按 `references/risk_schema.md` 的 schema 把审查结论写入 `<任务目录>/review_draft.json`。要点：
 - 每条 evidence 的 `quote` 必须从 contract.txt **逐字复制**（可以只截取关键句，但截取部分必须连续逐字一致；跨段落证据拆成多条 evidence，不要用省略号拼接）。
 - 合同原文中同一句话出现多次时，用 `occurrence` 指明第几次出现，或给出更长的 quote 使其唯一。
 - 缺失条款：`evidence: [{"no_text": true, "suggested_block_id": "<建议插入位置附近的block_id>"}]`，说明中写明"该问题无直接原文"。
 - 一个条款多个风险 → 多条风险记录引用同一证据；不要为省事合并不同性质的风险。
 - **不使用百分比置信度**；不确定的事项一律 severity=review_required 并写 manual_checks。
-- 顶层必须含 `contract_type`、`scope_limitation`（审查局限说明：仅覆盖三部法律、AI辅助、非法律意见、解析覆盖情况等）。
+- 顶层必须含 `contract_type`、`scope_limitation`（实际已核验法律范围、未覆盖专项、AI辅助、非法律意见、解析覆盖情况等）。
 - V2 可增加 `risk_source`、`preference_id`、`objective_legal_conclusion` 和已核验节点的 `edit`；旧草稿兼容。来源区分法律/制度/谈判/经验，精确建议应用的数据要求见 `references/risk_schema.md`。偏好不能覆盖法律规则。
 
 ### 第七步 机械校验
@@ -110,6 +112,8 @@ python scripts/validate_review.py --task-dir "<任务目录>" --index-dir law_in
 ```bash
 python scripts/render_report.py --task-dir "<任务目录>"
 ```
+
+正常首次审查优先用`python scripts/finalize_review.py --task-dir "<任务目录>"`完成覆盖率检查及渲染；返回2时先由WorkBuddy修复generation_requests中的遗漏和quality_requests中的未完成核验，不把生成失败称作法律冲突。旧报告诊断可显式--allow-incomplete并披露未完成项。
 
 产出 `contract_review.html`（单文件、无外链、内嵌 CSS/JS/数据）。渲染前脚本会对每个 span 做二次校验，定位失败的自动降级为"未能定位"，不会高亮错文字。检查输出的"单文件校验"是否全部 True。
 
@@ -130,12 +134,14 @@ V2 固定编辑器 `assets/editor.js` 自动内嵌，不使用外部 CDN。支�
 
 1. 确认任务目录含 `contract_review.html`、`review_result.json`（validate_review.py 直接产出，即结构化风险结果）、`review_log.json`（解析状态、法律范围、校验统计、异常）。
 2. 使用 WorkBuddy 实际提供的文件展示能力展示 `contract_review.html`，或让用户在浏览器离线打开。不能假设展示工具名称一定存在。
-3. 答复中如实汇报：合同类型、风险数量按等级分布、校验发现的引用问题、解析覆盖情况、审查局限（三部法律之外未覆盖）、"不构成法律意见"。
+3. 答复中如实汇报：合同类型、风险数量按等级分布、校验发现的引用问题、解析覆盖情况、实际知识资源覆盖及待核实专项、"不构成法律意见"。
 
 ## 详细参考（按需读取）
 
 - `references/risk_schema.md` — review_draft.json 完整字段定义与正反例。
 - `references/quality_workflow.md` — 通用生成、语义关联、分层质量审查、整组执行及受影响范围复核。
+- `references/usability_workflow.md` — 首次建议覆盖、候选切换、预审字段、卡片草稿、精确执行和受控迁移。
+- `references/knowledge_extensions.md` — 专业法律版本、来源、核验状态及历史时间适用。
 - `references/review_checklist.md` — 通用核查事项 + 15 类合同类型专项核查点。
 - `references/law_topics.md` — 三部法律的主题索引清单与检索策略（含条号速查：合同编重点条文、劳动合同法必备条款等）。
 - `references/v2_workflow.md` — WorkBuddy 首次偏好、视角、编辑、保存恢复、Word 生成与复审完整步骤。

@@ -17,6 +17,8 @@
 
 ## 单条风险对象（risks 数组元素）
 
+新版首次审查以`references/usability_workflow.md`的`suggestion.candidates`为主入口。每个候选遵循下述edit_plan动作结构；不能只写风险解释。无修改时必须给no_edit_reason；旧proposed_clause/edit仅用于可验证迁移，不能从第一条证据猜测范围。
+
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | risk_id | string | 是 | 草稿阶段稳定编号如 D01；validate 后会重排为 R001 并保留映射 |
@@ -45,6 +47,8 @@
 ## 通用修改计划（增量字段，不改变旧schema_version）
 
 新增风险字段edit_plan：plan_id、risk_id（可保持草稿稳定编号，展示编号仍由父风险重排）、reason、questions、business_terms、edits、required_edit_node_ids、postconditions、amount_records、related_risk_ids、source_revision_basis、condition_changes、semantic_review。来源及上下文由验证器绑定risk_context与source_file_sha256。
+
+新增字段：suggestion.candidates、no_edit_reason、field_bindings、semantic_review.field_policy。compiled的risk_identity记录analysis_id/display_id/source_plan_risk_id/plan_id，review_meta.risk_identity_map提供双向映射，重复或错关联阻断。六种readiness由结果推导，缺/过期核验用review_phase=awaiting_model_review区别于真实人工复核；正式语义状态还需十项检查及声明范围覆盖完整。新候选risk_id必须等于所属风险分析ID，旧嵌套计划通过父记录归属迁移并保留原别名。
 
 每个edits动作包含edit_id、target_node_id、operation（partial/replace/insert_clause/delete_clause）、expected_node_text（完整节点逐字原文）、expected_original（局部动作的原文片段，其他动作的完整节点原文）、replacement_text、dependencies。partial还需Unicode码点start/end。delete_clause的replacement_text为空；insert_clause锚点须为完整段落或表格最后节点。缺条件时draft_pending=true且replacement_text=null，不放占位示例假装正式文本。
 

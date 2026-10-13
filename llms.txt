@@ -1,6 +1,6 @@
 # contract-legal-review
 
-> Public WorkBuddy contract legal review V2.1 skill. Read SKILL.md first, download the complete repository, then run its local Python scripts. Python 3.10+; pypdf is optional for PDFs. Fixed offline editor, preferences, perspectives, revisions and re-review handoff. This is a fixed three-law snapshot.
+> Public WorkBuddy contract legal review V2.1 skill. Read SKILL.md first, download the complete repository, then run its local Python scripts. Python 3.10+; pypdf is optional for PDFs. Fixed offline editor, preferences, perspectives, revisions and re-review handoff. Three core law snapshots with separately verified specialist extension support.
 
 ## Entry points
 - [Skill instructions](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/SKILL.md)
@@ -16,6 +16,12 @@
 - [Delivery report](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/V2_DELIVERY_REPORT.md)
 
 ## Scripts
+- [First-review and usability workflow](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/usability_workflow.md)
+- [Professional knowledge extensions](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/knowledge_extensions.md)
+- [First-review completeness gate](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/finalize_review.py)
+- [Candidate generation protocol](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/proposal_pipeline.py)
+- [Bounded fact-field filling](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/proposal_fields.py)
+- [Controlled revision migration](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/migrate_revisions.py)
 - [General quality workflow](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/references/quality_workflow.md)
 - [Clause plan quality checks](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/plan_quality.py)
 - [Atomic plan executor](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/plan_executor.py)
@@ -35,6 +41,7 @@
 - [Native Word text revisions](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/scripts/docx_tracked.py)
 
 ## Resources
+- [Fixed fact-field JavaScript](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/assets/proposal_tools.js)
 - [Fixed plan validation JavaScript](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/assets/plan_tools.js)
 - [Civil Code index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/minfadian.json)
 - [Labor Contract Law index](https://raw.githubusercontent.com/827827sy-design/contract-legal-review/main/law_index/laodonghetongfa.json)

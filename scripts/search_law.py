@@ -33,8 +33,8 @@ force_utf8_stdio()
 
 def load_indexes(index_dir: Path) -> dict:
     idx = {}
-    for p in sorted(Path(index_dir).glob("*.json")):
-        rec = read_json(p)
+    from knowledge import load_records
+    for rec in load_records(index_dir).values():
         idx[rec["law_id"]] = rec
     return idx
 
@@ -49,6 +49,7 @@ def art_record(law, a):
         "article_no": a["article_no"],
         "chapter": a.get("chapter", ""),
         "text": a["text"],
+        "resource_verified":law.get('_resource_verified',False),"resource_complete":law.get('_complete',False),
     }
 
 

@@ -198,6 +198,7 @@ def main():
             cats_used.append(r["category"])
         data_risks.append({
             "risk_id": r["risk_id"], "title": r["title"], "category": r["category"],
+            "analysis_id":r.get('orig_id',r['risk_id']),"edit_plans":r.get('edit_plans',[]),
             "severity": r["severity"], "conclusion": r["conclusion"],
             "explanation": r["explanation"], "recommendation": r["recommendation"],
             "proposed_clause": r.get("proposed_clause", ""),
@@ -258,7 +259,7 @@ def main():
     import re
     replacements={'__TITLE__':esc(title),'__CONTRACT_HTML__':render_contract(contract,spans_all),
                   '__DATA_JSON__':json_for_script(data),
-                  '__EDITOR_JS__':(Path(__file__).resolve().parent.parent/'assets/plan_tools.js').read_text(encoding='utf-8')+'\n'+(tpl_path.parent/'editor.js').read_text(encoding='utf-8')}
+                  '__EDITOR_JS__':'\n'.join((tpl_path.parent/f).read_text(encoding='utf-8') for f in ['plan_tools.js','proposal_tools.js','editor.js'])}
     html=re.sub(r'__TITLE__|__CONTRACT_HTML__|__DATA_JSON__|__EDITOR_JS__',lambda m:replacements[m.group(0)],template)
 
     out = task_dir / "contract_review.html"

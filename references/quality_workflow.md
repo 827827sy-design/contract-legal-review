@@ -2,6 +2,8 @@
 
 这是 WorkBuddy 的模型审查工作流，不是固定合同条款模板。Python 只做确定性验证，不代替法律语义判断；HTML 执行器不推测修改意图。
 
+首次生成、六种状态、谈判推荐、候选切换及预审字段补充，统一依照 [完整生成与便捷修订流程](usability_workflow.md)。本页说明其共用的质量检查基础。
+
 ## 首次分析与建议生成
 
 读取解析主文、原生修订状态、已确认主体和视角、偏好来源，以及已检索法条。对每个风险明确原始原因、权利人/义务人、触发条件、必要修改条件及可能改变的利益分配。不要从风险编号、合同名称或条款编号推出处理方案。
@@ -16,7 +18,7 @@
 
 `edit_plan`包含plan_id（独立稳定ID）、risk_id、reason、questions、business_terms、edits、required_edit_node_ids、postconditions、amount_records、related_risk_ids、source_revision_basis。见risk_schema.md。只有确需修改的节点放required_edit_node_ids；关联节点可以仅核查和保留，不要求无意义地重写。
 
-业务terms每项包含id、value、confirmed、source；确认须来自真实用户或已明确提供的资料。不能把模型建议视作用户确认。涉及未接受Word修订时，先核对待审基准；provisional_current表示明确同意用当前显示文字作待审草稿，绝不表示接受或拒绝原修订。
+业务terms每项包含id、value、confirmed、source；事实确认须来自真实用户或已明确提供的资料。谈判推荐可用kind=negotiation、proposed=true、confirmed=false形成具体候选，应用前须用户明确接受并记录。不能把模型建议视作用户确认。涉及未接受Word修订时，先核对待审基准；provisional_current表示明确同意用当前显示文字作待审草稿，绝不表示接受或拒绝原修订。
 
 逐一核查新增或改变的触发、审批、验收、通知、付款前置条件，在condition_changes记录node_id、before_quote、after_quote、effect（clarification/business_change/legal_requirement）、reason、source，新增商务选择需confirmed。以合同为来源时附source_node_id/source_quote。不要把“双方确认”等专业措辞悄悄作为新前置条件；声明为clarification也须真实语义核查，程序不能替模型判断该分类。
 
@@ -35,7 +37,7 @@
 
 ## 状态与执行
 
-readiness由程序推导：ready（单处且条件完整）、needs_input（单处缺条件）、coordinated_review（多处需统一预览）、manual_review（依据或语义判断待复核）。多处计划只有can_apply=true才能经用户确认整组应用；标签“需关联修改”不等于可应用。ready只表示系统可执行性检查通过，不表示律师认可或效力保证。
+readiness由程序推导：ready（单处且条件完整）、editable_draft（有用的预审字段草案）、needs_input（缺必要事实）、coordinated_review（多处需统一预览）、manual_review（依据或可靠判断待复核）、generation_failed（生成或关联数据未完成）。多处计划只有can_apply=true才能经用户确认整组应用；标签“需关联修改”不等于可应用。ready只表示系统可执行性检查通过，不表示律师认可或效力保证。缺少十项语义记录属于系统工作未完成，首次交付覆盖率检查不能放行。
 
 正式文本与reason分离。括号中的合法定义、大写金额等不被自动删除；已知说明标签与未确认占位内容阻止应用。literal_bracket_terms只供真实字面术语使用，不能借此允许金额、日期、税率等关键占位。
 

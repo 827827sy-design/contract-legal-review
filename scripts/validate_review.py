@@ -39,8 +39,8 @@ force_utf8_stdio()
 
 def load_law_index(index_dir: Path) -> dict:
     idx = {}
-    for p in sorted(Path(index_dir).glob("*.json")):
-        rec = read_json(p)
+    from knowledge import load_records
+    for rec in load_records(index_dir).values():
         by_no = {a["article_no"]: a for a in rec["articles"]}
         idx[rec["law_id"]] = {"meta": rec, "by_no": by_no}
     return idx
@@ -243,8 +243,7 @@ def main():
     kb_notes = []
     for lid, law in law_index.items():
         meta = law["meta"]
-        expected_count={'minfadian':1260,'laodonghetongfa':98,'gongsifa':266}.get(lid)
-        complete = expected_count is not None and len(law['by_no'])==meta.get('article_count')==expected_count and {a.get('no') for a in meta['articles']}==set(range(1,expected_count+1))
+        complete=meta.get('_complete',False)
         kb_complete[lid] = complete
         if not complete:
             kb_notes.append(f"{meta['law_name']} 索引不完整")
@@ -262,6 +261,9 @@ def main():
         "kb_complete": kb_complete,
     }
     issues = []
+    from collections import Counter
+    analysis_counts=Counter(r.get('risk_id') for r in risks if r.get('risk_id'))
+    ambiguous_ids={id for id,n in analysis_counts.items() if n>1}
 
     for i, r in enumerate(risks):
         rid = r.get("risk_id") or f"R{i+1:03d}"
@@ -376,13 +378,14 @@ def main():
             "has_evidence": bool(vr["evidence"]),
         }
         from plan_quality import evaluate_plan,legacy_plan
-        raw_plan=dict(r['edit_plan']) if isinstance(r.get('edit_plan'),dict) else legacy_plan(vr)
-        raw_plan['risk_context']={'title':vr['title'],'conclusion':vr['conclusion'],'explanation':vr['explanation'],
+        context={'title':vr['title'],'conclusion':vr['conclusion'],'explanation':vr['explanation'],
                                   'evidence':[{'block_id':e.get('block_id',''),'quote':e.get('quote',''),'no_text':e.get('no_text',False)} for e in vr['evidence']],
                                   'category':vr['category'],'severity':vr['severity'],'risk_source':vr['risk_source'],
                                   'scope_note':vr['scope_note'],'manual_checks':vr['manual_checks'],
                                   'perspective':draft.get('perspective',{}),'evidence_verified':all_ev_ok and bool(vr['evidence'])}
-        vr['edit_plan']=evaluate_plan(raw_plan,contract,draft.get('contract_analysis'),vr['legal_basis'])
+        from proposal_pipeline import compile_candidates
+        vr['edit_plans']=compile_candidates(r,vr,contract,draft.get('contract_analysis'),context)
+        vr['edit_plan']=vr['edit_plans'][0]
         vr['verification_status']['suggestion_quality']=vr['edit_plan']['quality_result']
         verified_risks.append(vr)
 
@@ -418,6 +421,19 @@ def main():
         id_map[old] = new
         r["orig_id"] = old
         r["risk_id"] = new
+        for p in r['edit_plans']:
+            p['risk_identity']={'analysis_id':old,'display_id':new,'source_plan_risk_id':p.get('risk_id'),'plan_id':p['plan_id']}
+    from proposal_pipeline import coverage,refresh_digest
+    owners={}
+    for r in final_risks:
+        for p in r['edit_plans']:owners.setdefault(p['plan_id'],[]).append(r)
+    for r in final_risks:
+        for p in r['edit_plans']:
+            if r['orig_id'] in ambiguous_ids:
+                p.update(can_apply=False,readiness='generation_failed',quality_result='生成未完成');p['blockers'].append('分析风险编号重复，不能建立唯一映射');p['checks'].append({'code':'risk_identity','result':'manual','reason':'分析编号重复'})
+            if len(owners[p['plan_id']])>1:
+                p.update(can_apply=False,readiness='generation_failed',quality_result='生成未完成');p['blockers'].append('修改计划重复关联多项风险，须显式合并风险方案');p['checks'].append({'code':'plan_owner','result':'manual','reason':'修改计划所属风险不唯一'})
+            refresh_digest(p)
 
     resolution=[]
     for item in draft.get('risk_resolution',[]):
@@ -460,6 +476,9 @@ def main():
             "perspective":draft.get('perspective',read_json(task_dir/'review_context.json').get('perspective') if (task_dir/'review_context.json').exists() else {'mode':'neutral','focus':''}),
             "risk_resolution":resolution,
             "contract_analysis":draft.get('contract_analysis'),
+            "knowledge_context":__import__('knowledge').context(resolve_index_dir(args.index_dir),draft.get('contract_type',''),draft.get('contract_dates',{}).get('signed')),
+            "risk_identity_map":{'analysis_to_display':{k:v for k,v in id_map.items() if k not in ambiguous_ids},'display_to_analysis':{r['risk_id']:r['orig_id'] for r in final_risks if r['orig_id'] not in ambiguous_ids},'ambiguous_analysis_ids':sorted(ambiguous_ids)},
+            "suggestion_coverage":coverage(final_risks),
         },
         "risks": final_risks,
         "risk_id_map": id_map,
@@ -474,11 +493,16 @@ def main():
     write_json(task_dir / args.out, result)
     # 验收规范要求的固定产物名：review_result.json（结构化风险结果）
     write_json(task_dir / "review_result.json", result)
-    write_json(task_dir/'quality_requests.json',{'requires_workbuddy_analysis':True,'requests':[
-        {'risk_id':r['risk_id'],'plan_id':r['edit_plan'].get('plan_id'),'plan_fingerprint':r['edit_plan']['plan_fingerprint'],
-         'scope_node_hashes':{k:__import__('plan_quality').digest(v) for k,v in r['edit_plan']['scope_node_texts'].items()},
-         'raw_plan':r['edit_plan']['raw_plan'],'preview_nodes':r['edit_plan']['preview_nodes'],'blockers':r['edit_plan']['blockers']}
-        for r in final_risks]})
+    bindings=[
+        {'risk_id':r['risk_id'],'analysis_id':r['orig_id'],'plan_id':p.get('plan_id'),'plan_fingerprint':p['plan_fingerprint'],
+         'scope_node_hashes':{k:__import__('plan_quality').digest(v) for k,v in p['scope_node_texts'].items()},
+         'raw_plan':p['raw_plan'],'preview_nodes':p['preview_nodes'],'blockers':p['blockers'],
+         'needs_review':bool(p['edits']) and not p.get('semantic_complete') and not p.get('no_edit_reason')}
+        for r in final_risks for p in r['edit_plans']]
+    write_json(task_dir/'quality_requests.json',{'requires_workbuddy_analysis':any(x['needs_review'] for x in bindings),'requests':[x for x in bindings if x['needs_review']],'bindings':bindings})
+    write_json(task_dir/'generation_requests.json',{'requires_workbuddy_generation':True,'requests':[
+      {'risk_id':r['risk_id'],'analysis_id':r['orig_id'],'reason':r['edit_plan']['blockers'],'risk':r}
+      for r in final_risks if r['edit_plan']['readiness']=='generation_failed']})
     merge_log(task_dir, "validate_review", {
         "stats": stats, "issue_count": len(issues),
         "final_risk_count": len(final_risks), "kb_notes": kb_notes,

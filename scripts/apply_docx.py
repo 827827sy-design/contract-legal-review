@@ -14,8 +14,9 @@ from docx_tracked import Tracker,replace_tracked
 def replace_text(paragraph,before,after):
     if _docx_paragraph_text(paragraph)!=before:
         raise ValueError('Word 结构原文与解析快照不匹配。')
-    if '\n' in after or '\t' in after:
-        raise ValueError('自动 Word 导出不支持段内换行/制表符变更，请让 WorkBuddy 人工处理结构。')
+    if any(c in before or c in after for c in ['\n','\t']):
+        from docx_controls import replace_plain_islands
+        replace_plain_islands(paragraph,before,after);return
     texts=list(paragraph.iter(W+'t'))
     if not texts:
         run=ET.SubElement(paragraph,W+'r');texts=[ET.SubElement(run,W+'t')]
@@ -47,9 +48,9 @@ def main():
     contract=read_json(task/('base_contract.json' if (task/'base_contract.json').exists() else 'contract.json'))
     if file_sha256(src)!=contract['file_sha256']:raise ValueError('原始 DOCX 校验和不匹配。')
     revision=read_json(Path(args.revisions));nodes=replay(document_for(contract),revision,confirmed_only=True)
-    from plan_quality import formal_issues
+    from plan_quality import formal_issues,introduced_formal_issues
     literal_terms=[term for g in revision.get('plan_groups',{}).values() for term in g.get('snapshot',{}).get('raw_plan',{}).get('literal_bracket_terms',[])]
-    unfinished=[issue for node in nodes if node.get('changed') for issue in formal_issues(node['text'],literal_terms)]
+    unfinished=[issue for node in nodes if node.get('changed') for issue in (formal_issues(node['text'],literal_terms) if node.get('inserted') else introduced_formal_issues(revision['base_nodes'][node['node_id']],node['text'],literal_terms))]
     if unfinished:raise ValueError('有效修改仍包含待完善或说明性内容，不能作为完成稿导出：'+'；'.join(sorted(set(unfinished))))
     if src.suffix.lower()!='.docx':raise ValueError('自动导出仅支持 DOCX。其他格式请由 WorkBuddy 转换。')
     with zipfile.ZipFile(src) as archive:
